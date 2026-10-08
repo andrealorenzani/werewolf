@@ -1,0 +1,32 @@
+import { getSession } from './store.js';
+import { renderHome } from './views/home.js';
+import { renderJoin } from './views/join.js';
+import { renderCreate } from './views/create.js';
+import { openRoom } from './views/room.js';
+
+const app = document.getElementById('app');
+
+/** Tiny router: the URL hash/query decides the screen; sessions live in localStorage. */
+export function navigate(to) {
+  // `to` is a query string such as '?game=ABC123' ('' = home); paths stay relative so the app can live in a subdirectory
+  history.pushState(null, '', location.pathname + to);
+  route();
+}
+
+function route() {
+  const params = new URLSearchParams(location.search);
+  const joinId = params.get('join')?.toUpperCase();
+  const gameId = params.get('game')?.toUpperCase();
+  const create = params.get('create');
+  app.replaceChildren();
+  if (gameId && getSession(gameId)) return openRoom(app, gameId, navigate);
+  if (joinId) {
+    if (getSession(joinId)) return navigate(`?game=${joinId}`);
+    return renderJoin(app, joinId, navigate);
+  }
+  if (create) return renderCreate(app, create, navigate);
+  renderHome(app, navigate);
+}
+
+window.addEventListener('popstate', route);
+route();

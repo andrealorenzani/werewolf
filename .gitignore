@@ -1,0 +1,7 @@
+/vendor/
+/data/*
+!/data/.gitkeep
+!/data/.htaccess
+/config/config.local.php
+.env
+*.log

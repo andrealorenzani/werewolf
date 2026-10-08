@@ -1,0 +1,5 @@
+<?php
+// Copy to config.local.php. Example for shared hosting: keep data outside the web root.
+return [
+    'data_dir' => '/home/USERNAME/werewolf-data',
+];

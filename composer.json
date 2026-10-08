@@ -1,0 +1,12 @@
+{
+  "name": "andrea/werewolf-mafia",
+  "description": "Browser-based social deduction games: Werewolf and Mafia",
+  "type": "project",
+  "license": "proprietary",
+  "require": { "php": ">=8.2", "ext-json": "*", "ext-mbstring": "*" },
+  "autoload": { "psr-4": { "Wm\\": "src/" } },
+  "scripts": {
+    "test": "php tests/run.php",
+    "serve": "php -S localhost:8000 -t public"
+  }
+}

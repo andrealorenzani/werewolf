@@ -1,0 +1,6 @@
+# Used when the whole repository is uploaded as the site's web directory:
+# everything is served from public/, the rest (src, data, config, tests) is never reachable.
+# If you point the domain's web directory at public/ (recommended), this file is not needed.
+RewriteEngine On
+RewriteCond %{REQUEST_URI} !(^|/)public/
+RewriteRule ^(.*)$ public/$1 [L]
