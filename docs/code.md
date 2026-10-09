@@ -68,7 +68,7 @@ No database. `data/<ID>.json` + `data/<ID>.lock` written by `Store`; layout of t
 Naming: `T::test('what it proves', fn)`; one behaviour per test.
 
 ## Agentic workflow
-`CLAUDE.md` (conventions) · `.claude/commands/feature.md` (`/feature <text>`) · `.claude/agents/{architect,implementer,reviewer,documenter}.md`.
+`CLAUDE.md` (conventions) · `.claude/commands/feature.md` (`/feature <text>`) · `.claude/agents/{architect,implementer,reviewer,documenter,deployer}.md`. Deployment: `scripts/deploy.sh [--all] [--dry-run]` (runs tests, uploads only changed runtime files from committed code via the `sftp-upload` skill; target in gitignored `.deploy.local`, template `.deploy.local.example`; last deployed commit in gitignored `.deploy-state`). Root `.htaccess` serves `public/` at the site root, redirects `/public/…` to `/…` and 404s `src|config|data|tests|docs|scripts|.claude|.git`. `docs/changelog.md`: one entry per visible change (documenter).
 
 ## Where do I…?
 | Task | Where |
@@ -83,4 +83,6 @@ Naming: `T::test('what it proves', fn)`; one behaviour per test.
 | Add a game command | `Game::command` switch + method, handler in `room.js` click listener, test |
 | Add a page | new `views/*.js` + branch in `main.js` `route()` |
 | Change storage location | `config/config.local.php` |
+| Deploy / change what is uploaded | `scripts/deploy.sh` (`RUNTIME` regex), `.deploy.local` |
+| Log a change | `docs/changelog.md` |
 | Add a test | `tests/EngineTest.php` (rules) or `ApiTest.php` (API) with `T::test` |

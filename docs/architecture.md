@@ -106,7 +106,7 @@ lobby ─start→ discussion(day 0) ─→ night ─→ [hunter] ─→ discussi
 7. **Rules fixed to one variant** (plurality vote, no run-off, …) – see `rules.md`.
 
 ## Deployment
-Upload the repository; set the domain's web directory to `public/` (or keep the repo as web root: the root `.htaccess` forwards to `public/`). Ensure PHP ≥ 8.2 for the domain, `data/` is writable (or point `data_dir` outside the web root in `config/config.local.php`). Use HTTPS. Details in the README.
+The site lives at the root of its own domain on shared hosting. The runtime tree (`public/`, `src/`, `config/config.php`, `data/` guards, root `.htaccess`) is uploaded to the server's root directory; the root `.htaccess` serves `public/` at `/` and denies everything else. Alternatively set the web directory to `public/`. `scripts/deploy.sh` uploads only changed runtime files of committed code (tests must pass) through the `sftp-upload` skill; target in gitignored `.deploy.local`, credentials outside the repo. Docs, tests, scripts and `.claude/` are never uploaded. Ensure PHP ≥ 8.2, a writable `data/` (or `data_dir` outside the web root). Use HTTPS. No host, domain or credential is ever written to tracked files. If a database is ever added, it must use only `werewolf_`-prefixed tables (see `CLAUDE.md`). Details in the README.
 
 ## Open questions / limitations
 - No spectators, no rejoin after being kicked, no per-game language.

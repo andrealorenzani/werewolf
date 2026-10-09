@@ -32,6 +32,8 @@ Open http://localhost:8000. To play with other devices on your network, start wi
 4. Make `data/` writable (`chmod 775 data`). Safer: store games outside the web root — copy `config/config.local.php.example` to `config/config.local.php` and set `data_dir` to e.g. `/home/USER/werewolf-data` (create it first).
 5. Serve over HTTPS.
 
+Deployment is done by `scripts/deploy.sh [--all] [--dry-run]`: it requires a clean committed tree and passing tests, then uploads only the changed runtime files (no docs, tests, scripts). The target is configured in the gitignored `.deploy.local` (copy `.deploy.local.example`); credentials stay outside the repo. The site is served from the domain root. Never commit host names or credentials.
+
 Games are deleted after 24 h of inactivity. Timers are evaluated when a player's browser polls, so a game with nobody connected simply waits.
 
 ## Project structure

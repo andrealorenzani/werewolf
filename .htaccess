@@ -1,6 +1,15 @@
-# Used when the whole repository is uploaded as the site's web directory:
-# everything is served from public/, the rest (src, data, config, tests) is never reachable.
-# If you point the domain's web directory at public/ (recommended), this file is not needed.
+# The whole project is uploaded as the site's web directory: everything is served from public/.
+# src, data, config, tests, docs and scripts are never reachable. If the web directory is public/, this file is not needed.
+Options -Indexes
 RewriteEngine On
-RewriteCond %{REQUEST_URI} !(^|/)public/
+
+# /public/... (old URL) -> /...
+RewriteCond %{THE_REQUEST} \s/public(/[^\s?]*)?[\s?]
+RewriteRule ^public(/.*)?$ $1 [R=301,L]
+
+# everything else is served from public/
+RewriteCond %{REQUEST_URI} !^/public/
 RewriteRule ^(.*)$ public/$1 [L]
+
+# Defence in depth: these are not under public/ anyway.
+RedirectMatch 404 ^/(config|src|data|tests|docs|scripts|\.claude|\.git)(/.*)?$

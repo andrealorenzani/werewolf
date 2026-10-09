@@ -10,3 +10,5 @@ You implement the plan you are given for the Werewolf & Mafia project.
 - Write tests with the code: `tests/EngineTest.php` (rules, via `startedGame()` + `Clock`) or `tests/ApiTest.php` (API/storage). Cover happy path, invalid input, phase restrictions and visibility.
 - Run `php tests/run.php` (must pass) and `php -l` on changed PHP files; `node --check` on changed JS if Node is available.
 - Do not edit `docs/` (the documenter does). Report: files changed, behaviour added, deviations from the plan.
+
+Confidentiality: never write the server host, domain name, hosting-provider name, database host or credentials into any file in this repo, commit message or agent output (deployment settings live only in the gitignored `.deploy.local`; the upload mechanism is the `sftp-upload` skill via `scripts/deploy.sh`). Use generic wording such as "the server" or "shared hosting".

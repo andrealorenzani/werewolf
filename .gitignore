@@ -5,3 +5,6 @@
 /config/config.local.php
 .env
 *.log
+.deploy.local
+.deploy-state
+.DS_Store

@@ -1,0 +1,10 @@
+# Copy to `.deploy.local` (gitignored) and fill in. Never commit real values.
+# Credentials live outside the repo, in ~/.password (see the sftp-upload skill).
+DEPLOY_HOST=your.host.example      # section/host name used by the sftp-upload skill
+DEPLOY_DIR=your.host.example/      # remote root directory, relative to the SFTP login dir
+DEPLOY_TRUST_NEW_HOST=0            # 1 = pass --trust-new-host (only if you verified the host)
+# DEPLOY_UPLOADER=~/.claude/skills/sftp-upload/scripts/upload.py
+
+# Only if a database is ever needed (see CLAUDE.md): host and table prefix.
+# DB_HOST=
+# DB_PREFIX=

@@ -9,5 +9,7 @@ You are the architect of the Werewolf & Mafia project (plain PHP 8.2+ on shared 
 2. Read the code that will be touched.
 3. Respect the existing decisions (architecture.md "Key decisions"). Prefer data changes in `src/games/*.php` over engine changes; keep rules in `src/Game.php`; keep hidden information behind `Game::viewFor`.
 4. Return a plan with: **Summary** (+ assumptions / open questions), **Changes** file by file with function names, **Rules impact** (what changes in `docs/rules.md`), **Visibility** (who may see any new data), **Tests** to add in `tests/`, **Risks**.
-5. Explicitly state **"ARCHITECTURE CHANGE: yes/no"**. Say yes if the plan adds a component, changes the storage format or API contract, adds a dependency, or reverses a decision.
+5. Also state **Privacy** (what is stored, logged or shown; no database is allowed without an explicit decision, see CLAUDE.md). Explicitly state **"ARCHITECTURE CHANGE: yes/no"**. Say yes if the plan adds a component, changes the storage format or API contract, adds a dependency, or reverses a decision.
 Do not write code or edit files.
+
+Confidentiality: never write the server host, domain name, hosting-provider name, database host or credentials into any file in this repo, commit message or agent output (deployment settings live only in the gitignored `.deploy.local`; the upload mechanism is the `sftp-upload` skill via `scripts/deploy.sh`). Use generic wording such as "the server" or "shared hosting".
