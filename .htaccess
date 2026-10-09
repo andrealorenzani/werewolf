@@ -5,7 +5,7 @@ RewriteEngine On
 
 # /public/... (old URL) -> /...
 RewriteCond %{THE_REQUEST} \s/public(/[^\s?]*)?[\s?]
-RewriteRule ^public(/.*)?$ $1 [R=301,L]
+RewriteRule ^public/?(.*)$ /$1 [R=301,L]
 
 # everything else is served from public/
 RewriteCond %{REQUEST_URI} !^/public/
