@@ -127,3 +127,67 @@ T::test('store: ids are validated and sweep removes old games', function () {
     T::same(null, $store->peek($c['id']));
     rmTree($dir);
 });
+
+T::test('api: day-0 join, info joinable, settings and profile via cmd, version bumps', function () {
+    [$store, $dir] = tmpStore();
+    $clock = new Clock();
+    $api = new Api($store, ['clock' => $clock, 'rng' => fn() => 0.5]);
+    [, $c] = $api->handle('create', [
+        'type' => 'werewolf', 'name' => 'T', 'roles' => ['villager' => 5, 'werewolf' => 1, 'seer' => 1], 'player' => ['name' => 'Host'],
+    ]);
+    $id = $c['id'];
+    $tokens = [$c['token']];
+    for ($i = 1; $i < 4; $i++) {
+        [, $j] = $api->handle('join', ['id' => $id, 'player' => ['name' => "P$i"]]);
+        $tokens[] = $j['token'];
+    }
+    [, $info] = $api->handle('info', ['id' => $id]);
+    T::same(true, $info['joinable']);
+    T::same('lobby', $info['phase']);
+
+    // settings: version bump, host only
+    [, $r] = $api->handle('state', ['id' => $id, 'token' => $tokens[0], 'v' => -1]);
+    $v = $r['state']['version'];
+    $cfg = ['t' => 'settings', 'name' => 'Renamed', 'roles' => ['villager' => 4, 'werewolf' => 1], 'settings' => ['voteSeconds' => 30]];
+    [$s] = $api->handle('cmd', ['id' => $id, 'token' => $tokens[1], 'cmd' => $cfg]);
+    T::same(400, $s);
+    [$s, $r] = $api->handle('cmd', ['id' => $id, 'token' => $tokens[0], 'cmd' => $cfg]);
+    T::same(200, $s);
+    T::same('Renamed', $r['state']['name']);
+    T::same(5, $r['state']['total']);
+    T::true($r['state']['version'] > $v);
+    [, $r2] = $api->handle('state', ['id' => $id, 'token' => $tokens[1], 'v' => $v]);
+    T::same('Renamed', $r2['state']['name']); // other clients see the change on their next poll
+
+    [$s] = $api->handle('cmd', ['id' => $id, 'token' => $tokens[0], 'cmd' => ['t' => 'start']]);
+    T::same(200, $s);
+    [, $info] = $api->handle('info', ['id' => $id]);
+    T::same(true, $info['joinable']);
+    T::same('discussion', $info['phase']);
+
+    // day-0 join
+    [$s, $late] = $api->handle('join', ['id' => $id, 'player' => ['name' => 'Late']]);
+    T::same(200, $s);
+    [, $r] = $api->handle('state', ['id' => $id, 'token' => $late['token'], 'v' => -1]);
+    T::true($r['state']['me']['role']);
+    T::true(!str_contains(json_encode($r['state']), '"pool"'));
+
+    // profile with avatar, then fetch it through the avatars action
+    $img = 'data:image/jpeg;base64,/9j/4AAQ';
+    [$s, $r] = $api->handle('cmd', ['id' => $id, 'token' => $late['token'], 'cmd' => ['t' => 'profile', 'name' => 'Late2', 'avatar' => $img]]);
+    T::same(200, $s);
+    $me = array_values(array_filter($r['state']['players'], fn($p) => $p['id'] === $late['playerId']))[0];
+    T::same('Late2', $me['name']);
+    T::same(2, $me['avatarV']);
+    [, $av] = $api->handle('avatars', ['id' => $id, 'token' => $tokens[1], 'ids' => [$late['playerId']]]);
+    T::same($img, ((array)$av['avatars'])[$late['playerId']]);
+
+    // from night 1 on, joining is refused
+    [, $r] = $api->handle('cmd', ['id' => $id, 'token' => $tokens[0], 'cmd' => ['t' => 'skip']]);
+    T::same('night', $r['state']['phase']);
+    [$s] = $api->handle('join', ['id' => $id, 'player' => ['name' => 'TooLate']]);
+    T::same(400, $s);
+    [, $info] = $api->handle('info', ['id' => $id]);
+    T::same(false, $info['joinable']);
+    rmTree($dir);
+});

@@ -87,3 +87,8 @@ label { display: block; font-size: .9rem; color: var(--muted); margin-bottom: 4p
 #toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--evil); color: #fff;
   padding: 10px 18px; border-radius: 10px; opacity: 0; pointer-events: none; transition: opacity .2s; max-width: 90vw; z-index: 10; }
 #toast.show { opacity: 1; }
+
+/* modal (camera) */
+.modal { position: fixed; inset: 0; background: rgba(0, 0, 0, .6); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 12px; }
+.modal-box { max-width: 360px; width: 100%; }
+.cam { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--radius); background: #000; }

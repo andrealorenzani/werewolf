@@ -1,7 +1,8 @@
 import { gameDefs, pollState, sendCommand, fetchAvatars, joinUrl, qrDataUrl } from '../api.js';
 import { getSession, forgetSession } from '../store.js';
 import { esc, setHtml, toast, $ } from '../util.js';
-import { avatarHtml } from '../avatar.js';
+import { avatarHtml, profileFields, bindProfile, closePhotoDialog } from '../avatar.js';
+import { buildSetupForm } from './setup.js';
 
 const PHASE_LABEL = { lobby: 'Lobby', discussion: 'Discussion', vote: 'Vote', night: 'Night', hunter: "Hunter's shot", ended: 'Game over' };
 
@@ -31,12 +32,13 @@ export async function openRoom(app, gameId, navigate) {
     <div class="room-head">
       <div><h1 data-title style="margin:0"></h1><span class="muted small" data-desc></span></div>
       <div class="row"><span class="badge" data-phase></span><span class="timer" data-timer></span>
-        <button data-home>Home</button></div>
+        <button data-edit-profile>My profile</button><button data-home>Home</button></div>
     </div>
     <div data-banner></div>
+    <div data-profile></div>
     <div class="room-grid">
       <div class="stack"><div data-role></div><div data-action class="panel stack"></div><div data-notes></div></div>
-      <div class="stack"><div data-lobby></div><div class="panel stack" data-players-box><h3>Players</h3><div class="players" data-players></div></div></div>
+      <div class="stack"><div data-lobby></div><div data-settings></div><div class="panel stack" data-players-box><h3>Players</h3><div class="players" data-players></div></div></div>
       <div class="stack">
         <div class="panel"><h3>Story</h3><div class="log" data-log></div></div>
         <div class="panel"><h3>Chat</h3><div class="chat-list" data-chat></div>
@@ -56,11 +58,12 @@ export async function openRoom(app, gameId, navigate) {
   async function send(cmd) {
     try {
       const r = await sendCommand(gameId, session.token, cmd);
-      if (r.left) return leave();
+      if (r.left) { leave(); return true; }
       if (r.state) applyState(r.state);
+      return true;
     } catch (e) {
-      if (isGone(e)) return leave(e.message);
-      toast(e.message);
+      if (isGone(e)) leave(e.message); else toast(e.message);
+      return false;
     }
   }
 
@@ -74,7 +77,10 @@ export async function openRoom(app, gameId, navigate) {
       const r = await fetchAvatars(gameId, session.token, need.map((p) => p.id));
       Object.assign(avatars, r.avatars);
       render();
-    } catch { need.forEach((p) => requested.delete(`${p.id}:${p.avatarV}`)); }
+    } catch {
+      need.forEach((p) => requested.delete(`${p.id}:${p.avatarV}`));
+      if (!closed) setTimeout(() => { if (!closed && state) loadMissingAvatars(); }, 3000); // retry later
+    }
   }
 
   /** Short polling: fast while a decision is pending, slower in the lobby; paused while the tab is hidden. */
@@ -102,7 +108,7 @@ export async function openRoom(app, gameId, navigate) {
 
   // ---------- rendering ----------
   const player = (id) => state.players.find((p) => p.id === id);
-  const av = (p) => avatarHtml(p.name, avatars[p.id]);
+  const av = (p) => avatarHtml(p.name, p.hasAvatar ? avatars[p.id] : null);
   const roleDef = (id) => def.roles.find((r) => r.id === id);
 
   function render() {
@@ -113,7 +119,7 @@ export async function openRoom(app, gameId, navigate) {
     const badge = $('[data-phase]', app);
     badge.textContent = (state.round && state.phase !== 'lobby' && state.phase !== 'ended' ? `${PHASE_LABEL[state.phase]} · round ${state.round}` : PHASE_LABEL[state.phase]);
     badge.className = `badge ${state.phase === 'night' ? 'night' : state.phase === 'discussion' || state.phase === 'vote' ? 'day' : ''}`;
-    renderBanner(); renderRole(); renderAction(); renderNotes(); renderLobby(); renderPlayers(); renderLog(); renderChat();
+    renderBanner(); renderRole(); renderAction(); renderNotes(); renderLobby(); closeStaleEditors(); renderPlayers(); renderLog(); renderChat();
     updateTimer();
   }
 
@@ -173,6 +179,9 @@ export async function openRoom(app, gameId, navigate) {
       html = a && !a.waiting ? actionForm(a)
         : `<h3>Night</h3><p class="muted">${a ? 'Waiting for the others… keep your eyes closed.' : 'You sleep. Eyes closed… the village is quiet.'}</p>`;
     }
+    if (me.isHost && (state.phase === 'night' || state.phase === 'hunter')) {
+      html += `<button data-skip class="danger">${state.phase === 'night' ? 'Skip night step' : 'Skip hunter shot'} (host)</button>`;
+    }
     setHtml(el, html);
   }
 
@@ -204,10 +213,12 @@ export async function openRoom(app, gameId, navigate) {
 
   function renderLobby() {
     const el = $('[data-lobby]', app);
-    if (state.phase !== 'lobby') return setHtml(el, '');
+    if (state.phase !== 'lobby' && !state.joinable) return setHtml(el, '');
     const link = joinUrl(state.id);
     const qr = renderLobby.qr?.link === link ? renderLobby.qr.src : (renderLobby.qr = { link, src: qrDataUrl(link) }).src;
-    const full = state.players.length === state.total;
+    const n = state.players.length;
+    const canStart = n >= 4;
+    const inLobby = state.phase === 'lobby';
     const comp = def.roles.filter((r) => state.roleCounts[r.id]).map((r) => `${r.icon} ${state.roleCounts[r.id]} ${esc(r.name)}`).join(' · ');
     setHtml(el, `<div class="panel stack">
       <div class="row">
@@ -218,13 +229,60 @@ export async function openRoom(app, gameId, navigate) {
           <button data-copy="${esc(link)}">Copy link</button>
         </div>
       </div>
-      <p><b>${state.players.length}/${state.total}</b> players joined.</p>
-      <p class="small muted">${comp}</p>
-      ${state.me.isHost
-        ? `<button class="primary" data-start ${full ? '' : 'disabled'}>${full ? 'Start the game' : 'Waiting for players…'}</button>`
-        : `<p class="muted">${full ? 'Waiting for the host to start…' : 'Waiting for more players…'}</p>`}
-      ${!state.me.isHost ? '<button data-leave>Leave game</button>' : ''}
+      <p><b>${n}/${state.total}</b> players joined.</p>
+      ${inLobby ? `<p class="small muted">${comp}</p>` : '<p class="small muted">Late joiners welcome: you can still take a seat on day 0.</p>'}
+      ${inLobby ? (state.me.isHost
+        ? `<button class="primary" data-start ${canStart ? '' : 'disabled'}>${canStart ? `Start with ${n} players` : 'Waiting for players (at least 4)…'}</button>
+           <button data-edit-settings>Edit settings</button>`
+        : `<p class="muted">${canStart ? 'Waiting for the host to start…' : 'Waiting for more players…'}</p>`) : ''}
+      ${inLobby && !state.me.isHost ? '<button data-leave>Leave game</button>' : ''}
     </div>`);
+  }
+
+  // ---------- editors (rendered once, so polling never wipes what the user is typing) ----------
+  const settingsBox = $('[data-settings]', app);
+  const profileBox = $('[data-profile]', app);
+  const closeSettings = () => { settingsBox.innerHTML = ''; };
+  const closeProfile = () => { profileBox.innerHTML = ''; };
+  function closeStaleEditors() {
+    if (settingsBox.firstChild && (state.phase !== 'lobby' || !state.me.isHost)) closeSettings();
+  }
+
+  function openSettings() {
+    if (!state || settingsBox.firstChild) return;
+    const form = buildSetupForm(def, { name: state.name, description: state.description, roles: state.roleCounts, settings: state.settings });
+    const wrap = document.createElement('div');
+    wrap.className = 'stack';
+    wrap.appendChild(form.el);
+    wrap.insertAdjacentHTML('beforeend', `<p class="error" data-settings-error></p>
+      <div class="row"><button class="primary" data-save-settings>Save settings</button><button data-cancel-settings>Cancel</button></div>`);
+    wrap.addEventListener('click', async (e) => {
+      if (e.target.closest('[data-cancel-settings]')) return closeSettings();
+      if (!e.target.closest('[data-save-settings]')) return;
+      const problem = form.validate();
+      if (problem) { wrap.querySelector('[data-settings-error]').textContent = problem; return; }
+      if (await send({ t: 'settings', ...form.values() })) closeSettings();
+    });
+    settingsBox.appendChild(wrap);
+  }
+
+  function openProfile() {
+    if (!state || profileBox.firstChild) return;
+    const me = player(state.me.id);
+    const wrap = document.createElement('form');
+    wrap.className = 'panel stack';
+    wrap.innerHTML = `<h3>Edit my profile</h3>${profileFields({ name: me.name, avatar: me.hasAvatar ? avatars[me.id] ?? null : null })}
+      <div class="row"><button class="primary" data-save-profile>Save</button><button type="button" data-cancel-profile>Cancel</button></div>`;
+    const values = bindProfile(wrap, { name: me.name, avatar: me.hasAvatar ? avatars[me.id] ?? null : null });
+    wrap.addEventListener('click', (e) => { if (e.target.closest('[data-cancel-profile]')) closeProfile(); });
+    wrap.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const v = values();
+      const cmd = { t: 'profile', name: v.name };
+      if (values.avatarChanged()) cmd.avatar = v.avatar;
+      if (await send(cmd)) closeProfile();
+    });
+    profileBox.appendChild(wrap);
   }
 
   function renderPlayers() {
@@ -288,11 +346,11 @@ export async function openRoom(app, gameId, navigate) {
     el.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
   }
   const tick = setInterval(() => { if (!app.isConnected) return stop(); updateTimer(); }, 500);
-  function stop() { closed = true; clearInterval(tick); clearTimeout(pollTimer); }
+  function stop() { closed = true; closePhotoDialog(); clearInterval(tick); clearTimeout(pollTimer); }
 
   // ---------- events ----------
   app.addEventListener('click', (e) => {
-    const t = e.target.closest('[data-toggle-role],[data-ready],[data-skip],[data-abstain],[data-target],[data-confirm],[data-pass],[data-witch],[data-start],[data-copy],[data-kick],[data-leave],[data-home]');
+    const t = e.target.closest('[data-toggle-role],[data-ready],[data-skip],[data-abstain],[data-target],[data-confirm],[data-pass],[data-witch],[data-start],[data-copy],[data-kick],[data-leave],[data-home],[data-edit-settings],[data-edit-profile]');
     if (!t) return;
     const d = t.dataset;
     if ('toggleRole' in d) { showRole = !showRole; renderRole(); }
@@ -306,7 +364,13 @@ export async function openRoom(app, gameId, navigate) {
     else if ('confirm' in d) send({ t: 'action', target: sel ?? state.me.action?.choice?.target });
     else if ('pass' in d) send({ t: 'action', target: null });
     else if ('witch' in d) send({ t: 'action', heal: witch.heal, poison: witch.poison || null });
-    else if ('start' in d) send({ t: 'start' });
+    else if ('start' in d) {
+      const n = state.players.length;
+      if (n < state.total && !confirm(`Start with ${n} players? ${state.total - n} seat(s) will stay empty and the cards will be adjusted.`)) return;
+      send({ t: 'start' });
+    }
+    else if ('editSettings' in d) openSettings();
+    else if ('editProfile' in d) openProfile();
     else if ('copy' in d) navigator.clipboard?.writeText(d.copy).then(() => toast('Link copied'));
     else if ('kick' in d) send({ t: 'kick', playerId: d.kick });
     else if ('leave' in d) { send({ t: 'leave' }); leave(); }

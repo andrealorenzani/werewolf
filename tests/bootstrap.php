@@ -70,6 +70,7 @@ final class Clock
 function startedGame(string $type, array $roles, array $settings = []): array
 {
     $def = Games::get($type);
+    $settings += ['discussionSeconds' => 120, 'voteSeconds' => 45, 'nightSeconds' => 45]; // timers are off by default
     $counts = array_count_values($roles);
     $cfg = Config::normalize($def, ['name' => 'T', 'roles' => $counts, 'settings' => $settings]);
     $clock = new Clock();

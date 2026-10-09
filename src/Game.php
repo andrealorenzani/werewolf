@@ -34,6 +34,8 @@ final class Game
     public int $version = 0;      // bumped on every visible change; clients poll with it
     public array $log = [];
     public array $chat = [];
+    /** Role cards not dealt at start (hidden; late joiners draw from here). NEVER put in a view. */
+    public array $pool = [];
     public ?string $winner = null;
     public array $votes = [];     // voterId => targetId|null
     public ?array $night = null;  // {step, actions{playerId=>action}, victim, actors[]}
@@ -86,7 +88,7 @@ final class Game
         $out = [];
         foreach (['id', 'type', 'name', 'description', 'roleCounts', 'settings', 'total', 'hostId', 'phase', 'round',
             'deadline', 'seq', 'version', 'log', 'chat', 'winner', 'votes', 'night', 'hunter', 'pendingHunters',
-            'hunterNext', 'createdAt'] as $k) {
+            'hunterNext', 'createdAt', 'pool'] as $k) {
             $out[$k] = $this->$k;
         }
         $out['players'] = array_map(static fn(Player $p) => $p->toArray(), $this->players);
@@ -173,11 +175,11 @@ final class Game
     // ---------- lobby ----------
     public function addPlayer(mixed $profile): Player
     {
-        if ($this->phase !== 'lobby') {
+        if (!$this->joinable()) {
+            if (count($this->players) >= $this->total && ($this->phase === 'lobby' || $this->isDayZero())) {
+                throw new GameError('The game is full.');
+            }
             throw new GameError('The game has already started.');
-        }
-        if (count($this->players) >= $this->total) {
-            throw new GameError('The game is full.');
         }
         $prof = Config::profile($profile);
         foreach ($this->players as $q) {
@@ -193,10 +195,75 @@ final class Game
         $p->avatar = $prof['avatar'];
         $p->lastSeen = $this->now();
         $p->connected = true;
+        if ($this->phase !== 'lobby') {
+            $p->role = $this->drawLateRole();
+            $this->publicLog("{$p->name} joined the game.", 'info');
+        }
         $this->players[] = $p;
         $this->hostId ??= $p->id;
         $this->bump();
         return $p;
+    }
+
+    private function isDayZero(): bool
+    {
+        return $this->phase === 'discussion' && $this->round === 0;
+    }
+
+    /** Can someone still take a seat? Lobby, or day 0 (before the first night). */
+    public function joinable(): bool
+    {
+        return count($this->players) < $this->total && ($this->phase === 'lobby' || $this->isDayZero());
+    }
+
+    private function roleDef(string $id): ?array
+    {
+        foreach ($this->def['roles'] as $r) {
+            if ($r['id'] === $id) {
+                return $r;
+            }
+        }
+        return null;
+    }
+
+    /** Random card from the hidden pool; evil only if good would still strictly outnumber evil, else a filler. */
+    private function drawLateRole(): string
+    {
+        $evil = 0;
+        foreach ($this->players as $q) {
+            $evil += $this->teamOf($q) === 'evil' ? 1 : 0;
+        }
+        $good = count($this->players) - $evil;
+        $pool = array_values($this->pool);
+        if ($pool) {
+            $i = (int)floor($this->rand01() * count($pool));
+            if (($this->roleDef($pool[$i])['team'] ?? null) !== 'evil' || $good > $evil + 1) {
+                $role = $pool[$i];
+                array_splice($pool, $i, 1);
+                $this->pool = $pool;
+                return $role;
+            }
+            // Evil card rejected: it stays in the pool (not consumed) for a later joiner.
+            // Take a filler (else any good card) from the pool instead
+            foreach ([true, false] as $onlyFiller) {
+                foreach ($pool as $j => $id) {
+                    $r = $this->roleDef($id);
+                    if ($r['team'] === 'good' && (!$onlyFiller || !empty($r['filler']))) {
+                        array_splice($pool, $j, 1);
+                        $this->pool = $pool;
+                        return $id;
+                    }
+                }
+            }
+        }
+        // Final fallback (empty pool): a free filler card, not taken from the pool, so the
+        // total of this role may exceed the configured count.
+        foreach ($this->def['roles'] as $r) {
+            if (!empty($r['filler'])) {
+                return $r['id'];
+            }
+        }
+        throw new GameError('No role card available.');
     }
 
     public function playerByToken(string $token): ?Player
@@ -243,22 +310,95 @@ final class Game
         if ($this->phase !== 'lobby') {
             throw new GameError('The game has already started.');
         }
-        if (count($this->players) !== $this->total) {
-            throw new GameError(sprintf('Waiting for players (%d/%d).', count($this->players), $this->total));
+        $n = count($this->players);
+        if ($n < Config::MIN_PLAYERS) {
+            throw new GameError(sprintf('At least %d players needed (%d/%d).', Config::MIN_PLAYERS, $n, $this->total));
         }
-        $deck = [];
-        foreach ($this->roleCounts as $roleId => $n) {
-            for ($i = 0; $i < $n; $i++) {
-                $deck[] = $roleId;
-            }
-        }
-        foreach ($this->shuffle($deck) as $i => $roleId) {
+        $comp = $this->composition($n);
+        foreach ($this->shuffle($comp['dealt']) as $i => $roleId) {
             $this->players[$i]->role = $roleId;
         }
+        $this->pool = $comp['pool'];
         $this->players = $this->shuffle($this->players); // seating order must not reveal roles
         $this->round = 0;
         $this->publicLog('The game begins. Everyone has received a role card. Day 0: discuss!', 'phase');
         $this->enter('discussion');
+    }
+
+    /**
+     * Pure: which cards to deal to $n players and which stay in the hidden pool. Evil count is the
+     * configured share scaled to $n (at least 1, always fewer than good); roles listed later in the
+     * game definition are dropped first, and `filler` roles before other good roles.
+     * @return array{dealt:string[],pool:string[]}
+     */
+    public function composition(int $n): array
+    {
+        $evil = [];
+        $special = [];
+        $filler = [];
+        foreach ($this->def['roles'] as $r) {
+            $cards = array_fill(0, (int)($this->roleCounts[$r['id']] ?? 0), $r['id']);
+            if ($r['team'] === 'evil') {
+                $evil = array_merge($evil, $cards);
+            } elseif (!empty($r['filler'])) {
+                $filler = array_merge($filler, $cards);
+            } else {
+                $special = array_merge($special, $cards);
+            }
+        }
+        $e = (int)max(1, min(floor(($n - 1) / 2), round(count($evil) * $n / max(1, $this->total))));
+        $e = min($e, count($evil));
+        $good = array_merge($special, $filler); // specials kept first, fillers dropped first
+        $dealt = array_merge(array_slice($evil, 0, $e), array_slice($good, 0, $n - $e));
+        $pool = array_merge(array_slice($evil, $e), array_slice($good, $n - $e));
+        return ['dealt' => $dealt, 'pool' => $pool];
+    }
+
+    /** Host edits the setup while still in the lobby. Same payload as `create`. */
+    public function configure(string $byId, array $input): void
+    {
+        if ($byId !== $this->hostId) {
+            throw new GameError('Only the host can change the settings.');
+        }
+        if ($this->phase !== 'lobby') {
+            throw new GameError('Settings can only be changed before the game starts.');
+        }
+        if (!isset($input['roles']) || !is_array($input['roles'])) {
+            throw new GameError('The roles setup (roles) is missing.');
+        }
+        $cfg = Config::normalize($this->def, $input);
+        if ($cfg['total'] < count($this->players)) {
+            throw new GameError(sprintf('%d players have already joined: the game needs at least %d seats.',
+                count($this->players), count($this->players)));
+        }
+        $this->name = $cfg['name'];
+        $this->description = $cfg['description'];
+        $this->roleCounts = $cfg['roleCounts'];
+        $this->settings = $cfg['settings'];
+        $this->total = $cfg['total'];
+        $this->bump();
+    }
+
+    /** Change own name/avatar at any time. Avatar key absent = keep, null/"" = remove, data URL = replace. */
+    private function updateProfile(Player $p, array $cmd): void
+    {
+        $hasAvatar = array_key_exists('avatar', $cmd);
+        $prof = Config::profile(['name' => $cmd['name'] ?? '', 'avatar' => $hasAvatar ? $cmd['avatar'] : null]);
+        if ($p->profileAt > 0 && $this->now() - $p->profileAt < 3000) {
+            throw new GameError('Please wait a few seconds before changing your profile again.');
+        }
+        foreach ($this->players as $q) {
+            if ($q->id !== $p->id && mb_strtolower($q->name) === mb_strtolower($prof['name'])) {
+                throw new GameError('That name is already taken in this game.');
+            }
+        }
+        $p->name = $prof['name'];
+        if ($hasAvatar) {
+            $p->avatar = $prof['avatar'];
+            $p->avatarV++;
+        }
+        $p->profileAt = $this->now();
+        $this->bump();
     }
 
     // ---------- phase machine ----------
@@ -347,6 +487,8 @@ final class Game
             case 'chat': $this->chatMessage($p, $cmd['text'] ?? ''); break;
             case 'ready': $this->ready($p); break;
             case 'skip': $this->skip($p); break;
+            case 'settings': $this->configure($playerId, $cmd); break;
+            case 'profile': $this->updateProfile($p, $cmd); break;
             case 'vote': $this->vote($p, $this->idOrNull($cmd['target'] ?? null)); break;
             case 'action': $this->action($p, $cmd); break;
             default: throw new GameError('Unknown command.');
@@ -412,7 +554,7 @@ final class Game
         if ($p->id !== $this->hostId) {
             throw new GameError('Only the host can skip.');
         }
-        if ($this->phase !== 'discussion' && $this->phase !== 'vote') {
+        if (!in_array($this->phase, ['discussion', 'vote', 'night', 'hunter'], true)) {
             throw new GameError('Cannot skip this phase.');
         }
         $this->advance();
@@ -635,7 +777,9 @@ final class Game
             $this->night['actors'] = array_map(static fn(Player $p) => $p->id, $this->actorsForStep());
             if ($this->night['actors']) {
                 $this->seq++;
-                $this->arm($this->settings['nightSeconds']);
+                if ($this->settings['nightSeconds'] > 0) {
+                    $this->arm($this->settings['nightSeconds']);
+                }
                 $this->bump();
                 return;
             }
@@ -832,7 +976,7 @@ final class Game
         $view = [
             'id' => $this->id, 'type' => $this->type, 'name' => $this->name, 'description' => $this->description,
             'phase' => $this->phase, 'round' => $this->round, 'seq' => $this->seq, 'version' => $this->version,
-            'deadline' => $this->deadline, 'now' => $this->now(), 'total' => $this->total, 'hostId' => $this->hostId,
+            'deadline' => $this->deadline, 'now' => $this->now(), 'joinable' => $this->joinable(), 'total' => $this->total, 'hostId' => $this->hostId,
             'settings' => $this->settings, 'roleCounts' => $this->roleCounts, 'winner' => $this->winner,
             'players' => $players,
             'me' => [

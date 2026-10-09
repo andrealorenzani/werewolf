@@ -12,8 +12,11 @@ Background: the rules follow the classic party games *Mafia* (Dimitry Davidoff, 
 ### Setup
 - The host picks a game, a name/description, and **how many of each character** to include. The number of players is the sum of all counts.
 - Limits: 4–30 players, at least one evil member, and the good team must strictly outnumber the evil team at the start.
-- Players join with a code / QR / link. The host can start only when every seat is filled.
+- Players join with a code / QR / link. The host can start as soon as **at least 4 players** have joined, even if not every seat is filled. Until the game starts the host can change the whole setup (character counts, timers, name); the number of seats can never drop below the players already joined.
+- **Starting early:** the cards are scaled to the players present. The evil share is scaled by players/seats (at least 1, always fewer than the good team). Characters listed later in the game's role table are dropped first, and plain fillers (Villager/Citizen) before special good characters. Undealt cards stay in a hidden pool.
+- **Late join:** while seats remain, players can still join until day 0 discussion ends. A late joiner gets a random card from the hidden pool, but an evil card only if the good team would still strictly outnumber evil; otherwise a filler/good card. A public log line announces the arrival; evil teammates see a late evil joiner. A late joiner starts "not done", so day 0 waits until they press "done" or the host skips.
 - Each player secretly receives one character card (shuffled randomly). Evil members know each other; nobody else knows anything.
+- Any player may change their name (unique in the game, case-insensitive) or avatar at any time ("My profile"), at most once every 3 seconds.
 
 ### Phases
 ```
@@ -22,7 +25,7 @@ Day 0 (discussion) → Night 1 → Day 1 (discussion → vote) → Night 2 → D
 1. **Day 0 – discussion.** Everyone talks; no one has information yet. No vote, no elimination.
 2. **Night.** Special characters act in secret (see *Night order*). Players without a night power just wait.
 3. **Dawn.** Deaths are announced (never the cause). If *reveal characters* is on, the dead player's card is shown.
-4. **Discussion.** The living talk. Ends when every living player presses "done", when the timer expires, or when the host skips.
+4. **Discussion.** The living talk. Ends when every living player presses "done", when the timer (if any) expires, or when the host skips.
 5. **Vote.** Each living player votes for one other player or abstains; votes are public and can be changed until everyone has voted or time runs out. The player with the **most votes** is eliminated. **Ties (or no votes) eliminate nobody.**
 6. Back to night.
 
@@ -34,7 +37,7 @@ Checked after every elimination:
 - **Evil team wins** when living evil members ≥ living good members.
 
 ### Night order
-Night has up to two steps. The night ends as soon as all acting players submit, or when the timer expires (missing actions count as "skip").
+Night has up to two steps. The night ends as soon as all acting players submit, when the timer (if any) expires, or when the host skips the step (missing actions count as "skip"). The host can also skip the Hunter's shot.
 1. **Step 1:** block, kill, protect, inspect, shoot – all chosen simultaneously.
 2. **Step 2:** the Witch (Werewolf only) is told who the evil team chose to kill, then decides.
 
@@ -51,9 +54,9 @@ The evil team cannot target its own members. Protect may target oneself; every o
 ### Settings
 | Setting | Default | Meaning |
 |---|---|---|
-| Discussion seconds | 120 | Timer for each discussion |
-| Vote seconds | 45 | Timer for each vote (also the Hunter's shot) |
-| Night seconds | 45 | Timer for each night step |
+| Discussion seconds | off (0) | Optional timer for each discussion (15–900) |
+| Vote seconds | off (0) | Optional timer for each vote (10–300); also used for the Hunter's shot |
+| Night seconds | off (0) | Optional timer for each night step (15–300) |
 | Reveal characters | on | Show a player's card when they die |
 
 ---
@@ -72,7 +75,7 @@ The evil team cannot target its own members. Protect may target oneself; every o
 | Witch | Villagers | Knows the werewolves' victim. Once per game may **heal** that victim, and once per game may **poison** anyone. Max 1. |
 | Hunter | Villagers | When they die (night, vote, or any cause) they immediately **shoot** one player (or nobody). Max 1. |
 
-Default recommended set (6 players): 3 Villagers, 1 Werewolf, 1 Seer, 1 Doctor.
+Default set: 5 Villagers, 1 Werewolf (other characters 0; add them as you like).
 Suggestion: one extra werewolf per ~4 players beyond 8.
 
 ## Mafia
@@ -91,7 +94,7 @@ Suggestion: one extra werewolf per ~4 players beyond 8.
 | Vigilante | Town | Once per game, shoots one player at night. Max 1. |
 
 At least one Mafia member (Mafioso or Godfather) is required.
-Default recommended set (6 players): 3 Citizens, 1 Mafioso, 1 Detective, 1 Doctor.
+Default set: 5 Citizens, 1 Mafioso (other characters 0).
 
 ## Differences between the two games
 

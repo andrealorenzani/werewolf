@@ -2,6 +2,8 @@
 declare(strict_types=1);
 
 // Mafia game definition: pure data, no logic. See docs/rules.md.
+// Order matters: when a game starts with fewer players than configured cards, roles listed LATER are
+// dropped first (evil roles from the end, then `filler` roles, then other good roles from the end).
 return [
     'id' => 'mafia',
     'title' => 'Mafia',
@@ -25,7 +27,7 @@ return [
         ],
     ],
     'roles' => [
-        ['id' => 'citizen', 'name' => 'Citizen', 'team' => 'good', 'icon' => '🧍', 'filler' => true, 'max' => 30, 'def' => 3,
+        ['id' => 'citizen', 'name' => 'Citizen', 'team' => 'good', 'icon' => '🧍', 'filler' => true, 'max' => 30, 'def' => 5,
             'desc' => 'No special power. Use your voice and your vote to expose the Mafia.'],
         ['id' => 'mafioso', 'name' => 'Mafioso', 'team' => 'evil', 'icon' => '🔫', 'min' => 0, 'max' => 10, 'def' => 1,
             'desc' => 'Each night, the Mafia agree on one person to kill.',
@@ -33,10 +35,10 @@ return [
         ['id' => 'godfather', 'name' => 'Godfather', 'team' => 'evil', 'icon' => '🎩', 'max' => 1, 'def' => 0, 'appearsAs' => 'good',
             'desc' => 'You lead the Mafia and take part in the night kill. The Detective sees you as innocent.',
             'night' => ['kind' => 'kill', 'prompt' => 'Choose a person to kill.']],
-        ['id' => 'detective', 'name' => 'Detective', 'team' => 'good', 'icon' => '🕵️', 'max' => 1, 'def' => 1,
+        ['id' => 'detective', 'name' => 'Detective', 'team' => 'good', 'icon' => '🕵️', 'max' => 1, 'def' => 0,
             'desc' => 'Each night, investigate one player to learn whether they are Mafia.',
             'night' => ['kind' => 'inspect', 'prompt' => 'Choose a player to investigate.']],
-        ['id' => 'doctor', 'name' => 'Doctor', 'team' => 'good', 'icon' => '⚕️', 'max' => 1, 'def' => 1,
+        ['id' => 'doctor', 'name' => 'Doctor', 'team' => 'good', 'icon' => '⚕️', 'max' => 1, 'def' => 0,
             'desc' => 'Each night, protect one player (yourself included) from being killed.',
             'night' => ['kind' => 'protect', 'prompt' => 'Choose a player to protect.']],
         ['id' => 'escort', 'name' => 'Escort', 'team' => 'good', 'icon' => '💃', 'max' => 1, 'def' => 0,

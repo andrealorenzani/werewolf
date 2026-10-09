@@ -8,9 +8,9 @@ Browser-based, turn-based social-deduction games for 4–30 players, written in 
 The server is the game master: it deals the character cards, runs the night actions, counts the votes and announces the winner. Everybody plays from their own browser (phone-friendly).
 
 ## How it works
-1. Pick a game; set the name, description, your name, an optional avatar (kept in your browser's storage) and **how many of each character**.
+1. Pick a game; set the name, description, your name, an optional avatar (kept in your browser's storage) and **how many of each character** (defaults: 5 villagers/citizens + 1 evil; timers are optional and off by default).
 2. You get a unique game code, a link and a **QR code**. Other players scan it or type the code, choose a name/avatar and join.
-3. When all seats are filled the host starts the game and everyone taps their card to see their character.
+3. The host starts the game with at least 4 players (the cards are scaled to who is there); latecomers can still join until day 0 ends. Everyone taps their card to see their character. Anyone can edit their name and avatar (file or camera) at any time.
 4. Day 0 discussion → night (special characters act secretly) → dawn → discussion → vote → night … until one side wins.
 
 Full rules: [`docs/rules.md`](docs/rules.md).

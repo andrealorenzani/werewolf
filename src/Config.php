@@ -10,9 +10,9 @@ final class Config
     public const MAX_PLAYERS = 30;
 
     public const DEFAULT_SETTINGS = [
-        'discussionSeconds' => 120,
-        'voteSeconds' => 45,
-        'nightSeconds' => 45,
+        'discussionSeconds' => 0, // 0 = no time limit
+        'voteSeconds' => 0,
+        'nightSeconds' => 0,
         'revealRoles' => true, // reveal the role of eliminated players
     ];
 
@@ -82,13 +82,15 @@ final class Config
 
         $settings = self::DEFAULT_SETTINGS;
         foreach (self::RANGES as $key => [$lo, $hi]) {
-            if (!isset($input['settings'][$key])) {
-                continue;
+            $raw = $input['settings'][$key] ?? null;
+            if ($raw === null || $raw === '' || $raw === false) {
+                continue; // missing / empty = no limit
             }
-            if (!is_numeric($input['settings'][$key])) {
+            if (!is_numeric($raw)) {
                 throw new GameError("Invalid {$key}.");
             }
-            $settings[$key] = (int)min($hi, max($lo, round((float)$input['settings'][$key])));
+            $v = (float)$raw;
+            $settings[$key] = $v <= 0 ? 0 : (int)min($hi, max($lo, round($v)));
         }
         if (isset($input['settings']['revealRoles'])) {
             $settings['revealRoles'] = (bool)$input['settings']['revealRoles'];

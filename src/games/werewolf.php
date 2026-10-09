@@ -2,6 +2,8 @@
 declare(strict_types=1);
 
 // Werewolf game definition: pure data, no logic. See docs/rules.md.
+// Order matters: when a game starts with fewer players than configured cards, roles listed LATER are
+// dropped first (evil roles from the end, then `filler` roles, then other good roles from the end).
 return [
     'id' => 'werewolf',
     'title' => 'Werewolf',
@@ -25,15 +27,15 @@ return [
         ],
     ],
     'roles' => [
-        ['id' => 'villager', 'name' => 'Villager', 'team' => 'good', 'icon' => '🧑‍🌾', 'filler' => true, 'max' => 30, 'def' => 3,
+        ['id' => 'villager', 'name' => 'Villager', 'team' => 'good', 'icon' => '🧑‍🌾', 'filler' => true, 'max' => 30, 'def' => 5,
             'desc' => 'No special power. Use your voice and your vote to find the werewolves.'],
         ['id' => 'werewolf', 'name' => 'Werewolf', 'team' => 'evil', 'icon' => '🐺', 'min' => 1, 'max' => 10, 'def' => 1,
             'desc' => 'Each night, the werewolves agree on one villager to devour. By day, blend in.',
             'night' => ['kind' => 'kill', 'prompt' => 'Choose a victim to devour.']],
-        ['id' => 'seer', 'name' => 'Seer', 'team' => 'good', 'icon' => '🔮', 'max' => 1, 'def' => 1,
+        ['id' => 'seer', 'name' => 'Seer', 'team' => 'good', 'icon' => '🔮', 'max' => 1, 'def' => 0,
             'desc' => 'Each night, learn whether one player is a werewolf.',
             'night' => ['kind' => 'inspect', 'prompt' => 'Choose a player to investigate.']],
-        ['id' => 'doctor', 'name' => 'Doctor', 'team' => 'good', 'icon' => '⚕️', 'max' => 1, 'def' => 1,
+        ['id' => 'doctor', 'name' => 'Doctor', 'team' => 'good', 'icon' => '⚕️', 'max' => 1, 'def' => 0,
             'desc' => 'Each night, protect one player (yourself included) from being killed.',
             'night' => ['kind' => 'protect', 'prompt' => 'Choose a player to protect.']],
         ['id' => 'witch', 'name' => 'Witch', 'team' => 'good', 'icon' => '🧪', 'max' => 1, 'def' => 0,

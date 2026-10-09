@@ -18,9 +18,9 @@ export async function renderJoin(app, id, navigate) {
       <p class="muted">${esc(game.description)} <br>Players: ${game.joined}/${game.total} · Code <b>${esc(game.id)}</b></p>
       ${profileFields(profile)}
       <p class="error" data-error></p>
-      <div class="row"><button class="primary" ${game.phase === 'lobby' && game.joined < game.total ? '' : 'disabled'}>Join game</button>
+      <div class="row"><button class="primary" ${game.joinable ? '' : 'disabled'}>Join game</button>
         <button type="button" data-home>Cancel</button></div>
-      ${game.phase !== 'lobby' ? '<p class="error">This game has already started.</p>' : ''}
+      ${game.joinable ? (game.phase !== 'lobby' ? '<p class="muted small">The game has started, but you can still take a seat on day 0.</p>' : '') : '<p class="error">' + (game.phase === 'lobby' ? 'This game is full.' : 'This game has already started.') + '</p>'}
     </form>`;
   const values = bindProfile(app, profile);
   app.querySelector('[data-home]').addEventListener('click', () => navigate(''));

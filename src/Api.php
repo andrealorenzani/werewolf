@@ -78,7 +78,7 @@ final class Api
     {
         $d = $this->store->peek($id) ?? throw new GameError('Game not found.');
         return ['id' => $d['id'], 'type' => $d['type'], 'name' => $d['name'], 'description' => $d['description'],
-            'phase' => $d['phase'], 'joined' => count($d['players']), 'total' => $d['total']];
+            'phase' => $d['phase'], 'joinable' => Game::fromArray($d, $this->deps)->joinable(), 'joined' => count($d['players']), 'total' => $d['total']];
     }
 
     private function join(string $id, mixed $profile): array

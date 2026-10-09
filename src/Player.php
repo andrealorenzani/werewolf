@@ -16,6 +16,7 @@ final class Player
     public ?string $role = null;
     public bool $alive = true;
     public bool $ready = false;
+    public int $profileAt = 0; // ms of the last profile change (rate limit)
     public array $state = [];  // role-specific memory: healUsed, poisonUsed, shotUsed
     public array $notes = [];  // private messages [{round, text}]
 
