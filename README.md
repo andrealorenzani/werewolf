@@ -13,6 +13,8 @@ The server is the game master: it deals the character cards, runs the night acti
 3. The host starts the game with at least 4 players (the cards are scaled to who is there); latecomers can still join until day 0 ends. Everyone taps their card to see their character. Anyone can edit their name and avatar (file or camera) at any time.
 4. Day 0 discussion → night (special characters act secretly) → dawn → discussion → vote → night … until one side wins.
 
+The host can delete a game for everyone from the home page; players can send private messages and the host may replay chats in the end-of-game story. Werewolf includes the Paladin and the Ghost.
+
 Full rules: [`docs/rules.md`](docs/rules.md).
 
 ## Requirements

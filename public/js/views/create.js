@@ -33,7 +33,7 @@ export async function renderCreate(app, type, navigate) {
     try {
       saveProfile(player);
       const g = await createGame({ type, ...setup.values(), player });
-      saveSession(g.id, { token: g.token, playerId: g.playerId });
+      saveSession(g.id, { token: g.token, playerId: g.playerId, host: true });
       navigate(`?game=${g.id}`);
     } catch (ex) { err.textContent = ex.message; toast(ex.message); }
   });

@@ -2,7 +2,7 @@ import { gameDefs, pollState, sendCommand, fetchAvatars, joinUrl, qrDataUrl } fr
 import { getSession, forgetSession } from '../store.js';
 import { esc, setHtml, toast, $ } from '../util.js';
 import { avatarHtml, profileFields, bindProfile, closePhotoDialog } from '../avatar.js';
-import { buildSetupForm } from './setup.js';
+import { buildSetupForm, settingsLines } from './setup.js';
 
 const PHASE_LABEL = { lobby: 'Lobby', discussion: 'Discussion', vote: 'Vote', night: 'Night', hunter: "Hunter's shot", ended: 'Game over' };
 
@@ -37,12 +37,14 @@ export async function openRoom(app, gameId, navigate) {
     <div data-banner></div>
     <div data-profile></div>
     <div class="room-grid">
-      <div class="stack"><div data-role></div><div data-action class="panel stack"></div><div data-notes></div></div>
+      <div class="stack"><div data-role></div><div data-settings-list></div><div data-action class="panel stack"></div><div data-notes></div></div>
       <div class="stack"><div data-lobby></div><div data-settings></div><div class="panel stack" data-players-box><h3>Players</h3><div class="players" data-players></div></div></div>
       <div class="stack">
         <div class="panel"><h3>Story</h3><div class="log" data-log></div></div>
         <div class="panel"><h3>Chat</h3><div class="chat-list" data-chat></div>
-          <form class="chat-form" data-chat-form><input name="text" maxlength="300" autocomplete="off" placeholder="Say something…"><button>Send</button></form></div>
+          <form class="chat-form" data-chat-form><select name="to" aria-label="Send to"><option value="">Everyone</option></select>
+            <input name="text" maxlength="300" autocomplete="off" placeholder="Say something…"><button>Send</button></form>
+          <p class="small muted" data-chat-hint></p></div>
       </div>
     </div>`;
 
@@ -119,7 +121,7 @@ export async function openRoom(app, gameId, navigate) {
     const badge = $('[data-phase]', app);
     badge.textContent = (state.round && state.phase !== 'lobby' && state.phase !== 'ended' ? `${PHASE_LABEL[state.phase]} · round ${state.round}` : PHASE_LABEL[state.phase]);
     badge.className = `badge ${state.phase === 'night' ? 'night' : state.phase === 'discussion' || state.phase === 'vote' ? 'day' : ''}`;
-    renderBanner(); renderRole(); renderAction(); renderNotes(); renderLobby(); closeStaleEditors(); renderPlayers(); renderLog(); renderChat();
+    renderBanner(); renderRole(); renderSettingsList(); renderAction(); renderNotes(); renderLobby(); closeStaleEditors(); renderPlayers(); renderLog(); renderChat();
     updateTimer();
   }
 
@@ -130,7 +132,20 @@ export async function openRoom(app, gameId, navigate) {
       const won = state.me.team === state.winner;
       html = `<div class="panel winner-banner team-${state.winner}">🏆 ${esc(team.name)} win! <span class="muted">${won ? 'You won!' : 'You lost.'}</span></div>`;
     }
+    const g = state.me.ghost;
+    if (g) {
+      const team = def.teams[g.evil ? 'evil' : 'good'];
+      html += `<div class="panel ghost-banner ghost-${g.evil ? 'evil' : 'good'}">👻 ${g.evil
+        ? `Death has turned you: your ghost now sides with the ${esc(team.name)}.`
+        : `Your ghost stays loyal to the ${esc(team.name)}.`} <span class="muted small">Only you know this.</span></div>`;
+    }
     setHtml($('[data-banner]', app), html);
+  }
+
+  function renderSettingsList() {
+    const el = $('[data-settings-list]', app);
+    if (state.phase === 'lobby') return setHtml(el, '');
+    setHtml(el, `<div class="panel"><h3>Game settings</h3><ul class="settings-list small">${settingsLines(state.settings).map((l) => `<li>${esc(l)}</li>`).join('')}</ul></div>`);
   }
 
   function renderRole() {
@@ -138,6 +153,7 @@ export async function openRoom(app, gameId, navigate) {
     const me = state.me;
     if (state.phase === 'lobby' || !me.role) return setHtml(el, '');
     const r = roleDef(me.role);
+    if (!r) return setHtml(el, '');
     const status = me.alive ? '' : '<p class="error">You are out of the game. You can still watch and chat with other eliminated players.</p>';
     setHtml(el, showRole
       ? `<div class="panel role-card ${r.team}" data-toggle-role title="Tap to hide"><div class="icon">${r.icon}</div><h2>${esc(r.name)}</h2>
@@ -196,12 +212,19 @@ export async function openRoom(app, gameId, navigate) {
         <button class="primary" data-witch>${a.done ? 'Update' : 'Confirm'}</button>
         ${a.done ? '<p class="small muted">Submitted. Waiting for the night to end.</p>' : ''}`;
     }
+    if (a.kind === 'guard') {
+      return `<h3>${esc(a.prompt)}</h3>
+        <p>Victim tonight is <b>${esc(a.victim)}</b>.</p>
+        <div class="row"><button class="primary" data-guard="true">Save them (${a.usesLeft} left)</button>
+        <button data-guard="false">Let fate decide</button></div>
+        ${a.done ? `<p class="small muted">Submitted (${a.choice?.save ? 'saving them' : 'letting fate decide'}). Waiting for the night to end.</p>` : ''}`;
+    }
     const team = a.teamChoices
       ? Object.entries(a.teamChoices).map(([id, t]) => `<div class="small muted">${esc(player(id)?.name)} → ${t ? esc(player(t).name) : 'nobody'}</div>`).join('') : '';
     return `<h3>${esc(a.prompt)}</h3>
       <p>${chosen ? `Selected: <b>${esc(player(chosen).name)}</b>` : 'Tap a highlighted player.'}</p>${team}
       <div class="row"><button class="primary" data-confirm ${chosen ? '' : 'disabled'}>${a.done ? 'Update' : 'Confirm'}</button>
-      <button data-pass>${a.kind === 'hunter' ? "Don't shoot" : 'Skip'}</button></div>
+      <button data-pass>${a.kind === 'hunter' ? "Don't shoot" : a.kind === 'haunt' ? "Don't point" : 'Skip'}</button></div>
       ${a.done ? `<p class="small muted">Submitted${a.choice?.target ? '' : ' (skip)'}. Waiting for the night to end.</p>` : ''}`;
   }
 
@@ -299,12 +322,13 @@ export async function openRoom(app, gameId, navigate) {
       const status = state.phase === 'lobby' ? (p.id === state.hostId ? '👑 host' : '')
         : !p.alive ? `☠ ${r ? esc(r.name) : 'out'}` : r ? `${r.icon} ${esc(r.name)}`
         : state.phase === 'vote' ? (p.hasVoted ? '✓ voted' : '…') : state.phase === 'discussion' && p.ready ? '✓ ready' : '';
+      const flag = p.markedText ? ` <span class="flag">⚑ ${esc(p.markedText)}</span>` : '';
       const kick = state.phase === 'lobby' && state.me.isHost && p.id !== state.me.id
         ? ` <span class="link" role="button" tabindex="0" data-kick="${p.id}" title="Remove">✕</span>` : '';
-      return `<button class="player ${p.alive ? '' : 'dead'} ${selectable ? 'selectable' : ''} ${picked ? 'selected' : ''} ${p.id === state.me.id ? 'me' : ''}"
+      return `<button class="player ${p.alive ? '' : 'dead'} ${p.markedBy ? 'marked' : ''} ${selectable ? 'selectable' : ''} ${picked ? 'selected' : ''} ${p.id === state.me.id ? 'me' : ''}"
         ${selectable ? `data-target="${p.id}"` : 'tabindex="-1"'} type="button">
         ${av(p)}<span class="meta"><span class="name">${esc(p.name)}</span>
-        <span class="small muted"><span class="dot ${p.connected ? '' : 'off'}"></span>${status}${kick}</span></span>
+        <span class="small muted"><span class="dot ${p.connected ? '' : 'off'}"></span>${status}${kick}${flag}</span></span>
         ${tally[p.id] ? `<span class="tally">${tally[p.id]}</span>` : ''}</button>`;
     }).join('');
     setHtml($('[data-players]', app), html);
@@ -313,7 +337,13 @@ export async function openRoom(app, gameId, navigate) {
   function renderLog() {
     const el = $('[data-log]', app);
     const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 30;
-    setHtml(el, state.log.map((l) => `<p class="${esc(l.type === 'phase' ? 'phase' : l.type)}">${esc(l.text)}</p>`).join('') || '<p class="muted">The story will appear here.</p>');
+    setHtml(el, state.log.map((l) => {
+      if (l.type !== 'chat') return `<p class="${esc(l.type === 'phase' ? 'phase' : l.type)}">${esc(l.text)}</p>`;
+      const from = esc(player(l.from)?.name ?? '?');
+      const who = l.ch === 'dm' ? `${from} → ${esc(player(l.to)?.name ?? '?')} <span class="small">(private)</span>`
+        : `${from}${l.ch === 'dead' ? ' <span class="small">(graveyard)</span>' : l.ch === 'evil' ? ` <span class="small">(${esc(def.teams.evil.name)})</span>` : ''}`;
+      return `<p class="chat">${who}: ${esc(l.text)}</p>`;
+    }).join('') || '<p class="muted">The story will appear here.</p>');
     if (atBottom) el.scrollTop = el.scrollHeight;
   }
 
@@ -328,6 +358,7 @@ export async function openRoom(app, gameId, navigate) {
     const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 30;
     setHtml(el, state.chat.map((m) => {
       const p = player(m.from);
+      if (m.ch === 'dm') return `<p class="ch-dm"><b>${esc(p?.name ?? '?')}</b> → <b>${esc(player(m.to)?.name ?? '?')}</b> <span class="small">(private)</span>: ${esc(m.text)}</p>`;
       const tag = m.ch === 'dead' ? ' <span class="small">(graveyard)</span>' : m.ch === 'evil' ? ` <span class="small">(${esc(def.teams.evil.name)})</span>` : '';
       return `<p class="ch-${m.ch}"><b>${esc(p?.name ?? '?')}</b>${tag}: ${esc(m.text)}</p>`;
     }).join('') || '<p class="muted small">No messages yet.</p>');
@@ -336,6 +367,39 @@ export async function openRoom(app, gameId, navigate) {
     const ok = canChat();
     form.text.disabled = !ok;
     form.text.placeholder = ok ? (state.me.alive ? 'Say something…' : 'Talk to the other ghosts…') : 'Quiet… it is night';
+    renderChatTarget(form);
+    $('[data-chat-hint]', app).textContent = state.settings.storyPrivateChat
+      ? 'Private messages, wolf night chat and graveyard chat will be shown in the final story.' : '';
+  }
+
+  /** Can I send a private message to this player right now? Mirrors the server rule. */
+  function canDm(p) {
+    const ph = state.phase;
+    if (p.id === state.me.id || ph === 'night') return false;
+    if (ph === 'lobby' || ph === 'ended') return true;
+    if (state.me.alive && ph !== 'discussion' && ph !== 'vote') return false;
+    return p.alive === state.me.alive;
+  }
+
+  /** The "send to" list is rebuilt only when the players change, so polling never resets the choice. */
+  function renderChatTarget(form) {
+    const sel = form.to;
+    const others = state.players.filter((p) => p.id !== state.me.id);
+    const key = others.map((p) => `${p.id}:${p.name}`).join('|');
+    if (sel.dataset.key !== key) {
+      const keep = sel.value;
+      sel.innerHTML = `<option value="">Everyone</option>${others.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('')}`;
+      sel.dataset.key = key;
+      sel.value = others.some((p) => p.id === keep) ? keep : '';
+    }
+    let any = false;
+    for (const o of sel.options) {
+      if (!o.value) continue;
+      o.disabled = !canDm(player(o.value));
+      any ||= !o.disabled;
+    }
+    if (sel.selectedOptions[0]?.disabled) sel.value = '';
+    sel.disabled = !any;
   }
 
   // ---------- timer ----------
@@ -350,7 +414,7 @@ export async function openRoom(app, gameId, navigate) {
 
   // ---------- events ----------
   app.addEventListener('click', (e) => {
-    const t = e.target.closest('[data-toggle-role],[data-ready],[data-skip],[data-abstain],[data-target],[data-confirm],[data-pass],[data-witch],[data-start],[data-copy],[data-kick],[data-leave],[data-home],[data-edit-settings],[data-edit-profile]');
+    const t = e.target.closest('[data-toggle-role],[data-ready],[data-skip],[data-abstain],[data-target],[data-confirm],[data-pass],[data-witch],[data-guard],[data-start],[data-copy],[data-kick],[data-leave],[data-home],[data-edit-settings],[data-edit-profile]');
     if (!t) return;
     const d = t.dataset;
     if ('toggleRole' in d) { showRole = !showRole; renderRole(); }
@@ -363,6 +427,7 @@ export async function openRoom(app, gameId, navigate) {
     }
     else if ('confirm' in d) send({ t: 'action', target: sel ?? state.me.action?.choice?.target });
     else if ('pass' in d) send({ t: 'action', target: null });
+    else if ('guard' in d) send({ t: 'action', save: d.guard === 'true' });
     else if ('witch' in d) send({ t: 'action', heal: witch.heal, poison: witch.poison || null });
     else if ('start' in d) {
       const n = state.players.length;
@@ -383,7 +448,7 @@ export async function openRoom(app, gameId, navigate) {
   $('[data-chat-form]', app).addEventListener('submit', (e) => {
     e.preventDefault();
     const input = e.target.text;
-    if (input.value.trim()) send({ t: 'chat', text: input.value });
+    if (input.value.trim()) send({ t: 'chat', text: input.value, to: e.target.to.value || null });
     input.value = '';
   });
 

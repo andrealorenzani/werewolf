@@ -31,21 +31,24 @@ Day 0 (discussion) → Night 1 → Day 1 (discussion → vote) → Night 2 → D
 
 Eliminated players can no longer vote or use powers. They may chat with other eliminated players only.
 
+**Private messages:** a player can send a private message to one other player, except at night. During the game it works alive to alive and dead to dead; in the lobby and after the game ends anyone can message anyone.
+
 ### Winning
 Checked after every elimination:
 - **Good team wins** when no evil member is alive.
 - **Evil team wins** when living evil members ≥ living good members.
 
 ### Night order
-Night has up to two steps. The night ends as soon as all acting players submit, when the timer (if any) expires, or when the host skips the step (missing actions count as "skip"). The host can also skip the Hunter's shot.
+Night has up to three steps. The night ends as soon as all acting players submit, when the timer (if any) expires, or when the host skips the step (missing actions count as "skip"). The host can also skip the Hunter's shot.
 1. **Step 1:** block, kill, protect, inspect, shoot – all chosen simultaneously.
-2. **Step 2:** the Witch (Werewolf only) is told who the evil team chose to kill, then decides.
+2. **Step 2:** the Witch and the Paladin (Werewolf only) are told who the evil team chose to kill, then decide.
+3. **Step 3 (Werewolf):** a Ghost created by tonight's wolf kill points a finger (see Ghost). It ends when the ghost acts, by timer, or when the host skips. A ghost with no valid target is skipped.
 
 Resolution:
 1. **Blocks** (Escort) cancel the target's action for the night. The blocked player is told.
 2. The evil team's victim is the **plurality** target among unblocked evil killers (ties broken randomly).
-3. The Witch's heal cancels the evil kill; her poison and the Vigilante's shot add attacks.
-4. A **protected** player (Doctor) survives every attack. The Doctor is told if their patient was attacked.
+3. The Paladin's shield or the Witch's heal cancels the evil kill; her poison and the Vigilante's shot add attacks.
+4. A **protected** player (Mafia Doctor) survives every attack. The Doctor is told if their patient was attacked.
 5. **Inspections** (Seer / Detective) are answered privately, unless the inspector was blocked.
 6. Everyone who still has an attack on them dies.
 
@@ -58,6 +61,10 @@ The evil team cannot target its own members. Protect may target oneself; every o
 | Vote seconds | off (0) | Optional timer for each vote (10–300); also used for the Hunter's shot |
 | Night seconds | off (0) | Optional timer for each night step (15–300) |
 | Reveal characters | on | Show a player's card when they die |
+| Story: public chat | off | The end-of-game story replays the public chat between the events |
+| Story: private chats | off | The story also replays private messages, night wolf/mafia chat and graveyard chat (everyone sees them at the end) |
+
+In the room these settings are listed under "Your character". The lobby and post-game chat are never part of the story. The chat history keeps the last 300 messages (1000 if a story option is on).
 
 ---
 
@@ -71,10 +78,12 @@ The evil team cannot target its own members. Protect may target oneself; every o
 | Villager | Villagers | None. Talk and vote. (Fills the remaining seats.) |
 | Werewolf | Werewolves | Each night, the werewolves jointly pick a victim. They can chat privately at night. At least 1 required. |
 | Seer | Villagers | Each night, learns whether one player **is a werewolf**. Max 1. |
-| Doctor | Villagers | Each night, protects one player (self allowed). Max 1. |
+| Paladin | Villagers | After the werewolves choose, may shield their victim (the victim survives). Charges per game = number of werewolves in the game, dead ones included. A charge is spent even if the Witch also heals; the shield does not stop poison or the Hunter's/Vigilante's shots. Max 1. |
+| Ghost | Villagers | If the werewolves kill you (and nothing prevents it) you become a ghost: 50% you turn evil. Only you know your side (green or red banner) and you see everyone's roles. A good ghost points a finger at a werewolf-side player, an evil ghost at a good player (not the dying). Dawn announces it, the ghost's role is revealed even if *reveal characters* is off, and the target shows "selected by ghost X" for that day. Max 3. |
 | Witch | Villagers | Knows the werewolves' victim. Once per game may **heal** that victim, and once per game may **poison** anyone. Max 1. |
 | Hunter | Villagers | When they die (night, vote, or any cause) they immediately **shoot** one player (or nobody). Max 1. |
 
+The Doctor is not in Werewolf (replaced by the Paladin).
 Default set: 5 Villagers, 1 Werewolf (other characters 0; add them as you like).
 Suggestion: one extra werewolf per ~4 players beyond 8.
 
@@ -102,13 +111,13 @@ Default set: 5 Citizens, 1 Mafioso (other characters 0).
 |---|---|---|
 | Theme | Monsters in a village | Criminals in a town |
 | Investigator | Seer: "is a werewolf" | Detective: "is Mafia"; Godfather evades |
-| Unique good roles | Witch, Hunter | Escort, Vigilante |
+| Unique good roles | Witch, Hunter, Paladin, Ghost | Escort, Vigilante |
 | Unique evil roles | – | Godfather |
 | Core loop, win conditions, vote | identical | identical |
 
 ## Variant choices (fixed on purpose)
 - The vote is a plurality with **no run-off**; ties spare everyone.
-- The Doctor may protect the same person on consecutive nights and may protect himself.
+- The Mafia Doctor may protect the same person on consecutive nights and may protect himself.
 - Deaths never reveal their cause; the dead's card is revealed only if *reveal characters* is on.
 - The Hunter's shot happens immediately, even when the Hunter was voted out.
 - Day 0 has no vote.

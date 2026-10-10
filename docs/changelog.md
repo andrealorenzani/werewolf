@@ -2,6 +2,21 @@
 
 Newest first. Maintained by the `documenter` agent for every player- or developer-visible change.
 
+## 2026-10-10 (2)
+### Added
+- Host can delete a game for everyone: API action `delete` (`Api::deleteGame`, `Store::remove`, `Game::canDelete`). The home "Remove" button deletes it for the host; for other players it only forgets the game locally.
+- Settings `storyPublicChat` / `storyPrivateChat`: the end-of-game log replays the public chat and/or private chats (DMs, wolf/mafia night chat, graveyard chat) in order with the events. Chat history kept is 300 messages, 1000 when either option is on.
+- Private messages (DMs): `chat` command accepts `to`. Not at night; alive to alive, dead to dead; anyone in the lobby and after the end.
+- Werewolf: **Paladin** (night step 2: may shield the wolves' victim; charges = number of werewolves in the game, dead ones included) and **Ghost** (if killed by the wolves it haunts: 50% chance of turning evil, points a finger at someone in a new night step 3; public mark "selected by ghost X" for the day).
+- Views: `me.ghost`, per-player `markedBy`/`markedText`, action kinds `guard` and `haunt`; `Games::publicList` exposes `nightStep` and `haunts`.
+### Changed
+- Settings list is now under "Your character" in the room.
+- Night has three steps in the engine; `resolveNight` split into `applyNightEffects` and `finishNight`. New state `Game::marks`, `night.dying`, `night.ghosts`; log items carry an ordering key `cs`, chat items `ph` and `to`.
+### Removed
+- Werewolf **Doctor** (replaced by the Paladin; Mafia keeps its Doctor). In-flight Werewolf games saved with a doctor lose that power after deploy (games expire after 24 h).
+### Known limitation
+- Re-arming the step 3 deadline can hint that a ghost died.
+
 ## 2026-10-10
 ### Added
 - Host can start with 4+ players before the lobby is full; cards are scaled (`Game::composition`) and the rest kept in a hidden `pool`.

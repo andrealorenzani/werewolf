@@ -191,3 +191,91 @@ T::test('api: day-0 join, info joinable, settings and profile via cmd, version b
     T::same(false, $info['joinable']);
     rmTree($dir);
 });
+
+/** Game with a host and 4 more players; returns [api, dir, id, tokens[0]=host]. */
+function apiGame(): array
+{
+    [$store, $dir] = tmpStore();
+    $api = new Api($store, ['clock' => new Clock(), 'rng' => fn() => 0.5]);
+    [, $c] = $api->handle('create', [
+        'type' => 'werewolf', 'name' => 'T', 'roles' => ['villager' => 4, 'werewolf' => 1], 'player' => ['name' => 'Host'],
+    ]);
+    $tokens = [$c['token']];
+    for ($i = 1; $i < 5; $i++) {
+        [, $j] = $api->handle('join', ['id' => $c['id'], 'player' => ['name' => "P$i"]]);
+        $tokens[] = $j['token'];
+    }
+    return [$api, $dir, $c['id'], $tokens];
+}
+
+T::test('api: the host deletes the game in the lobby, mid-game and when ended', function () {
+    foreach (['lobby', 'night', 'ended'] as $stage) {
+        [$api, $dir, $id, $tokens] = apiGame();
+        if ($stage !== 'lobby') {
+            $api->handle('cmd', ['id' => $id, 'token' => $tokens[0], 'cmd' => ['t' => 'start']]);
+            $api->handle('cmd', ['id' => $id, 'token' => $tokens[0], 'cmd' => ['t' => 'skip']]);
+        }
+        if ($stage === 'ended') {
+            $raw = json_decode(file_get_contents("$dir/$id.json"), true);
+            $raw['phase'] = 'ended';
+            file_put_contents("$dir/$id.json", json_encode($raw));
+        }
+        [$s, $r] = $api->handle('delete', ['id' => strtolower($id), 'token' => $tokens[0]]);
+        T::same(200, $s, $stage);
+        T::same(['deleted' => true], $r);
+        T::true(!file_exists("$dir/$id.json"), $stage);
+        T::true(!file_exists("$dir/$id.lock"), $stage);
+        [$s, $r] = $api->handle('state', ['id' => $id, 'token' => $tokens[1], 'v' => -1]);
+        T::same(400, $s);
+        T::matches('/not found/', $r['error']);
+        [$s] = $api->handle('info', ['id' => $id]);
+        T::same(400, $s);
+        [$s, $r] = $api->handle('delete', ['id' => $id, 'token' => $tokens[0]]); // already gone
+        T::same(400, $s);
+        T::matches('/not found/', $r['error']);
+        rmTree($dir);
+    }
+});
+
+T::test('api: a non-host cannot delete; wrong token and bad ids are rejected', function () {
+    [$api, $dir, $id, $tokens] = apiGame();
+    [$s, $r] = $api->handle('delete', ['id' => $id, 'token' => $tokens[1]]);
+    T::same(400, $s);
+    T::matches('/Only the host/', $r['error']);
+    [$s, $r] = $api->handle('delete', ['id' => $id, 'token' => 'nope']);
+    T::same(400, $s);
+    T::matches('/expired/', $r['error']);
+    [$s] = $api->handle('delete', ['id' => $id, 'token' => '']);
+    T::same(400, $s);
+    [$s] = $api->handle('delete', ['id' => '../../etc', 'token' => $tokens[0]]);
+    T::same(400, $s);
+    [$s] = $api->handle('delete', ['id' => 'ZZZZZZ', 'token' => $tokens[0]]);
+    T::same(400, $s);
+    T::true(!file_exists("$dir/ZZZZZZ.lock"), 'no stray lock for unknown games');
+    T::true(file_exists("$dir/$id.json"), 'game remains');
+    [$s, $r] = $api->handle('state', ['id' => $id, 'token' => $tokens[1], 'v' => -1]);
+    T::same(200, $s);
+    T::same(5, count($r['state']['players']));
+    rmTree($dir);
+});
+
+T::test('api: story chat settings and DMs travel through create and cmd', function () {
+    [$store, $dir] = tmpStore();
+    $api = new Api($store, ['clock' => new Clock(), 'rng' => fn() => 0.5]);
+    [, $c] = $api->handle('create', [
+        'type' => 'werewolf', 'name' => 'T', 'roles' => ['villager' => 4, 'werewolf' => 1],
+        'settings' => ['storyPublicChat' => true], 'player' => ['name' => 'Host'],
+    ]);
+    [, $j] = $api->handle('join', ['id' => $c['id'], 'player' => ['name' => 'Bob']]);
+    [, $k] = $api->handle('join', ['id' => $c['id'], 'player' => ['name' => 'Cy']]);
+    [, $r] = $api->handle('state', ['id' => $c['id'], 'token' => $c['token'], 'v' => -1]);
+    T::same(true, $r['state']['settings']['storyPublicChat']);
+    T::same(false, $r['state']['settings']['storyPrivateChat']);
+    [$s] = $api->handle('cmd', ['id' => $c['id'], 'token' => $c['token'], 'cmd' => ['t' => 'chat', 'text' => 'hi Bob', 'to' => $j['playerId']]]);
+    T::same(200, $s);
+    [, $r] = $api->handle('state', ['id' => $c['id'], 'token' => $j['token'], 'v' => -1]);
+    T::same('dm', $r['state']['chat'][0]['ch']);
+    [, $r] = $api->handle('state', ['id' => $c['id'], 'token' => $k['token'], 'v' => -1]);
+    T::same([], $r['state']['chat']);
+    rmTree($dir);
+});

@@ -14,6 +14,8 @@ final class Config
         'voteSeconds' => 0,
         'nightSeconds' => 0,
         'revealRoles' => true, // reveal the role of eliminated players
+        'storyPublicChat' => false,  // replay the public chat in the final story
+        'storyPrivateChat' => false, // replay DMs, wolf night chat and graveyard chat in the final story
     ];
 
     private const RANGES = [
@@ -94,6 +96,9 @@ final class Config
         }
         if (isset($input['settings']['revealRoles'])) {
             $settings['revealRoles'] = (bool)$input['settings']['revealRoles'];
+        }
+        foreach (['storyPublicChat', 'storyPrivateChat'] as $key) {
+            $settings[$key] = ($input['settings'][$key] ?? false) === true;
         }
 
         return ['name' => $name, 'description' => $description, 'roleCounts' => $counts,

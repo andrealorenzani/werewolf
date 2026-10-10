@@ -79,7 +79,14 @@ label { display: block; font-size: .9rem; color: var(--muted); margin-bottom: 4p
 .log p, .chat-list p { margin: 4px 0; }
 .log .phase { color: var(--accent); font-weight: 600; margin-top: 10px; } .log .death { color: var(--evil); } .log .win { color: var(--good); font-weight: 700; }
 .chat-list .ch-dead { color: var(--muted); font-style: italic; } .chat-list .ch-evil { color: var(--evil); }
+.chat-list .ch-dm { color: var(--accent); font-style: italic; }
+.log .chat { color: var(--muted); }
 .chat-form { display: flex; gap: 8px; margin-top: 8px; }
+.chat-form select { width: auto; max-width: 38%; flex: none; }
+.settings-list { margin: 0; padding-left: 18px; }
+.ghost-banner { text-align: center; margin-bottom: 12px; border-width: 2px; }
+.ghost-evil { border-color: var(--evil); color: var(--evil); } .ghost-good { border-color: var(--good); color: var(--good); }
+.player.marked { border-color: var(--evil); } .player .flag { color: var(--evil); font-weight: 600; }
 .note { border-left: 3px solid var(--warn); padding-left: 10px; margin: 6px 0; }
 .qr { background: #fff; padding: 8px; border-radius: 12px; width: 220px; height: 220px; }
 .code { font: 700 2rem/1 ui-monospace, monospace; letter-spacing: .15em; }

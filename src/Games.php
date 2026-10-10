@@ -27,7 +27,8 @@ final class Games
                     'id' => $r['id'], 'name' => $r['name'], 'team' => $r['team'], 'icon' => $r['icon'], 'desc' => $r['desc'],
                     'min' => $r['min'] ?? 0, 'max' => $r['max'] ?? 1, 'def' => $r['def'] ?? 0,
                     'filler' => !empty($r['filler']),
-                    'nightKind' => $r['night']['kind'] ?? null, 'onDeath' => $r['onDeath'] ?? null,
+                    'nightKind' => $r['night']['kind'] ?? null, 'nightStep' => $r['night']['step'] ?? 1,
+                    'haunts' => isset($r['haunt']), 'onDeath' => $r['onDeath'] ?? null,
                 ], $d['roles']),
             ];
         }

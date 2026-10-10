@@ -1,6 +1,6 @@
-import { gameDefs, getGame } from '../api.js';
-import { getSessions, forgetSession } from '../store.js';
-import { esc } from '../util.js';
+import { gameDefs, getGame, deleteGame } from '../api.js';
+import { getSessions, getSession, forgetSession } from '../store.js';
+import { esc, toast } from '../util.js';
 
 export async function renderHome(app, navigate) {
   const defs = await gameDefs();
@@ -41,12 +41,32 @@ export async function renderHome(app, navigate) {
       const g = await getGame(id);
       box.insertAdjacentHTML('beforeend', `<div class="row spread"><span><b>${esc(g.name)}</b>
         <span class="muted small">(${esc(id)} · ${esc(g.phase)})</span></span>
-        <button data-open="${esc(id)}">Rejoin</button></div>`);
+        <span class="row"><button data-open="${esc(id)}">Rejoin</button>
+        <button class="danger" data-remove="${esc(id)}">Remove</button></span></div>`);
     } catch { forgetSession(id); }
   }
   if (!box.children.length) box.closest('section').hidden = true;
-  box.addEventListener('click', (e) => {
+  box.addEventListener('click', async (e) => {
     const id = e.target.dataset.open;
-    if (id) navigate(`?game=${id}`);
+    if (id) return navigate(`?game=${id}`);
+    const rm = e.target.closest('[data-remove]')?.dataset.remove;
+    if (!rm) return;
+    const s = getSession(rm);
+    const isHost = s?.host !== false; // sessions saved before the flag existed: try, the server decides
+    const g = e.target.closest('.row.spread').querySelector('b')?.textContent ?? rm;
+    if (!confirm(s?.host === undefined
+      ? `Remove this game? If you are the host it is deleted for everyone; otherwise it is only removed from your list.`
+      : isHost
+        ? `Delete "${g}" for everyone? This removes the game for all players and cannot be undone.`
+        : `Remove "${g}" from this device? You can rejoin later if you still have the code.`)) return;
+    if (isHost && s) {
+      try { await deleteGame(rm, s.token); } catch (ex) {
+        // already gone, session expired or not the host: only forget it locally
+        if (!/not found|expired|removed|Only the host/i.test(ex.message)) return toast(ex.message);
+      }
+    }
+    forgetSession(rm);
+    e.target.closest('.row.spread').remove();
+    if (!box.children.length) box.closest('section').hidden = true;
   });
 }

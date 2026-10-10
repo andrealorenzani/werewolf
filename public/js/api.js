@@ -15,6 +15,7 @@ export const getGame = (id) => fetch(`api.php?a=info&id=${encodeURIComponent(id)
 export const joinGame = (id, player) => call('join', { id, player });
 export const pollState = (id, token, v) => call('state', { id, token, v });
 export const fetchAvatars = (id, token, ids) => call('avatars', { id, token, ids });
+export const deleteGame = (id, token) => call('delete', { id, token });
 export const sendCommand = (id, token, cmd) => call('cmd', { id, token, cmd });
 
 /** Absolute link other players open (or scan) to join a game; works in subdirectories. */

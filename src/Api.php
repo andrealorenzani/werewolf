@@ -15,6 +15,7 @@ namespace Wm;
  *   state  {id, token, v}              poll: {unchanged:true} or {state}
  *   avatars{id, token, ids[]}          {avatars:{playerId:dataURL}}
  *   cmd    {id, token, cmd}           run a game command -> {state}
+ *   delete {id, token}                 host only: remove the game for everyone -> {deleted:true}
  */
 final class Api
 {
@@ -45,6 +46,7 @@ final class Api
             'state' => $this->state($this->id($in), $this->token($in), (int)($in['v'] ?? -1)),
             'avatars' => $this->avatars($this->id($in), $this->token($in), $in['ids'] ?? []),
             'cmd' => $this->command($this->id($in), $this->token($in), $in['cmd'] ?? null),
+            'delete' => $this->deleteGame($this->id($in), $this->token($in)),
             default => throw new GameError('Unknown action.'),
         };
     }
@@ -123,6 +125,17 @@ final class Api
         $g = Game::fromArray($d, $this->deps);
         $g->playerByToken($token) ?? throw new GameError('Session expired. Please join again.');
         return ['avatars' => (object)$g->avatars(is_array($ids) ? array_slice($ids, 0, 40) : [])];
+    }
+
+    private function deleteGame(string $id, string $token): array
+    {
+        $this->store->remove($id, function (Game $g) use ($token) {
+            $p = $g->playerByToken($token) ?? throw new GameError('Session expired. Please join again.');
+            if (!$g->canDelete($p->id)) {
+                throw new GameError('Only the host can delete this game.');
+            }
+        }, $this->deps);
+        return ['deleted' => true];
     }
 
     private function command(string $id, string $token, mixed $cmd): array

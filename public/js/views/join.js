@@ -30,7 +30,7 @@ export async function renderJoin(app, id, navigate) {
       const player = values();
       saveProfile(player);
       const s = await joinGame(id, player);
-      saveSession(s.id, { token: s.token, playerId: s.playerId });
+      saveSession(s.id, { token: s.token, playerId: s.playerId, host: false });
       navigate(`?game=${s.id}`);
     } catch (ex) { app.querySelector('[data-error]').textContent = ex.message; }
   });

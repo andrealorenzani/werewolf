@@ -98,6 +98,32 @@ final class Store
         }
     }
 
+    /**
+     * Delete a game for good under the same lock writers use. $guard(Game) runs first and may throw
+     * (e.g. GameError when the caller is not allowed); nothing is deleted in that case.
+     * @param callable(Game):void $guard
+     */
+    public function remove(string $id, callable $guard, array $deps = []): void
+    {
+        $lock = @fopen($this->path($id, 'lock'), 'c');
+        if ($lock === false || !flock($lock, LOCK_EX)) {
+            throw new \RuntimeException('Cannot lock game.');
+        }
+        try {
+            $data = $this->peek($id);
+            if ($data === null) {
+                @unlink($this->path($id, 'lock'));
+                throw new GameError('Game not found.');
+            }
+            $guard(Game::fromArray($data, $deps));
+            @unlink($this->path($id));
+            @unlink($this->path($id, 'lock'));
+        } finally {
+            flock($lock, LOCK_UN);
+            fclose($lock);
+        }
+    }
+
     private function write(Game $game): void
     {
         $path = $this->path($game->id);

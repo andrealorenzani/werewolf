@@ -16,6 +16,8 @@ namespace Wm;
 final class Game
 {
     private const PRESENCE_MS = 15000;
+    private const CHAT_KEEP = 300;        // messages kept in the chat history
+    private const CHAT_KEEP_STORY = 1000; // ... when chat is replayed in the final story
 
     public string $id;
     public string $type;
@@ -42,6 +44,8 @@ final class Game
     public ?string $hunter = null;
     public array $pendingHunters = [];
     public ?string $hunterNext = null;
+    /** Public ghost marks of the current day: [[targetId, ghostId], …]; cleared at nightfall. */
+    public array $marks = [];
     public int $createdAt;
     public bool $dirty = false;   // needs saving
 
@@ -88,7 +92,7 @@ final class Game
         $out = [];
         foreach (['id', 'type', 'name', 'description', 'roleCounts', 'settings', 'total', 'hostId', 'phase', 'round',
             'deadline', 'seq', 'version', 'log', 'chat', 'winner', 'votes', 'night', 'hunter', 'pendingHunters',
-            'hunterNext', 'createdAt', 'pool'] as $k) {
+            'hunterNext', 'marks', 'createdAt', 'pool'] as $k) {
             $out[$k] = $this->$k;
         }
         $out['players'] = array_map(static fn(Player $p) => $p->toArray(), $this->players);
@@ -138,6 +142,9 @@ final class Game
 
     private function nightKind(Player $p): ?string
     {
+        if (in_array($p->id, $this->night['ghosts'] ?? [], true)) {
+            return 'haunt';
+        }
         return $this->roleOf($p)['night']['kind'] ?? null;
     }
 
@@ -159,7 +166,9 @@ final class Game
 
     private function publicLog(string $text, string $type = 'info'): void
     {
-        $this->log[] = ['round' => $this->round, 'phase' => $this->phase, 'type' => $type, 'text' => $text];
+        // 'cs' = id of the last chat message so far: lets the final story interleave chat with the log
+        $this->log[] = ['round' => $this->round, 'phase' => $this->phase, 'type' => $type, 'text' => $text,
+            'cs' => $this->chat ? end($this->chat)['id'] : 0];
     }
 
     private function note(Player $p, string $text): void
@@ -302,6 +311,12 @@ final class Game
         $this->bump();
     }
 
+    /** Only the host may delete the game for everyone. */
+    public function canDelete(string $playerId): bool
+    {
+        return $this->hostId !== null && $playerId === $this->hostId;
+    }
+
     public function start(string $byId): void
     {
         if ($byId !== $this->hostId) {
@@ -424,7 +439,8 @@ final class Game
         } elseif ($phase === 'night') {
             $this->round++;
             $this->publicLog($this->text('nightFalls', $this->round), 'phase');
-            $this->night = ['step' => 1, 'actions' => [], 'victim' => null, 'actors' => []];
+            $this->marks = [];
+            $this->night = ['step' => 1, 'actions' => [], 'victim' => null, 'actors' => [], 'dying' => [], 'ghosts' => []];
             $this->night['actors'] = array_map(static fn(Player $p) => $p->id, $this->actorsForStep());
         } elseif ($phase === 'discussion' && $this->round > 0) {
             $this->publicLog($this->text('dayBreaks', $this->round), 'phase');
@@ -484,7 +500,7 @@ final class Game
             case 'start': $this->start($playerId); break;
             case 'kick': $this->removePlayer((string)($cmd['playerId'] ?? ''), $playerId); break;
             case 'leave': $this->removePlayer($playerId, $playerId); break;
-            case 'chat': $this->chatMessage($p, $cmd['text'] ?? ''); break;
+            case 'chat': $this->chatMessage($p, $cmd['text'] ?? '', $this->idOrNull($cmd['to'] ?? null)); break;
             case 'ready': $this->ready($p); break;
             case 'skip': $this->skip($p); break;
             case 'settings': $this->configure($playerId, $cmd); break;
@@ -506,27 +522,50 @@ final class Game
         return $v;
     }
 
-    private function chatMessage(Player $p, mixed $text): void
+    /** Channel a player's messages go to right now, or null when they must stay quiet. */
+    private function chatChannel(Player $p): ?string
+    {
+        if ($this->phase === 'lobby' || $this->phase === 'ended') {
+            return 'all';
+        }
+        if (!$p->alive) {
+            return 'dead';
+        }
+        if ($this->phase === 'discussion' || $this->phase === 'vote') {
+            return 'all';
+        }
+        return $this->teamOf($p) === 'evil' ? 'evil' : null;
+    }
+
+    /** $to = recipient id for a private message (DM), null for the normal channel. */
+    private function chatMessage(Player $p, mixed $text, ?string $to = null): void
     {
         $text = Config::clean($text, 300);
         if ($text === '') {
             return;
         }
-        if ($this->phase === 'lobby' || $this->phase === 'ended') {
-            $ch = 'all';
-        } elseif (!$p->alive) {
-            $ch = 'dead';
-        } elseif ($this->phase === 'discussion' || $this->phase === 'vote') {
-            $ch = 'all';
-        } elseif ($this->teamOf($p) === 'evil') {
-            $ch = 'evil';
+        $ch = $this->chatChannel($p);
+        if ($to === null) {
+            $ch ?? throw new GameError('You cannot talk right now.');
         } else {
-            throw new GameError('You cannot talk right now.');
+            $q = $this->player($to);
+            $inLobbyOrEnd = $this->phase === 'lobby' || $this->phase === 'ended';
+            if (!$q || $q->id === $p->id || $this->phase === 'night' || !in_array($ch, ['all', 'dead'], true)
+                || (!$inLobbyOrEnd && $q->alive !== ($ch === 'all'))) {
+                throw new GameError('You cannot send private messages right now.');
+            }
+            $ch = 'dm';
         }
         $last = $this->chat ? end($this->chat)['id'] : 0;
-        $this->chat[] = ['id' => $last + 1, 'ch' => $ch, 'from' => $p->id, 'text' => $text, 'ts' => $this->now()];
-        if (count($this->chat) > 300) {
-            $this->chat = array_slice($this->chat, -300);
+        $m = ['id' => $last + 1, 'ch' => $ch, 'from' => $p->id];
+        if ($to !== null) {
+            $m['to'] = $to;
+        }
+        $this->chat[] = $m + ['text' => $text, 'ts' => $this->now(), 'ph' => $this->phase];
+        $story = !empty($this->settings['storyPublicChat']) || !empty($this->settings['storyPrivateChat']);
+        $keep = $story ? self::CHAT_KEEP_STORY : self::CHAT_KEEP;
+        if (count($this->chat) > $keep) {
+            $this->chat = array_slice($this->chat, -$keep);
         }
         $this->bump();
     }
@@ -611,9 +650,9 @@ final class Game
     }
 
     // ---------- deaths & victory ----------
-    private function revealSuffix(Player $p): string
+    private function revealSuffix(Player $p, bool $force = false): string
     {
-        return $this->settings['revealRoles'] ? " They were a {$this->roleOf($p)['name']}." : '';
+        return $force || $this->settings['revealRoles'] ? ' They were a ' . ($this->roleOf($p)['name'] ?? 'mystery') . '.' : '';
     }
 
     private function kill(Player $p): void
@@ -682,21 +721,44 @@ final class Game
     }
 
     // ---------- night ----------
-    /** @return Player[] */
+    /**
+     * Night steps: 1 = everyone without `night.step`, 2 = roles with `step` 2 (they see the victim),
+     * 3 = ghosts created by this night's deaths (haunt). Effects are applied once, between 2 and 3.
+     * @return Player[]
+     */
     private function actorsForStep(): array
     {
         $step = $this->night['step'];
+        if ($step === 3) {
+            return array_values(array_filter($this->alive(), fn(Player $p) => in_array($p->id, $this->night['ghosts'] ?? [], true)
+                && $this->canAct($p, 'haunt')));
+        }
         return array_values(array_filter($this->alive(), function (Player $p) use ($step) {
             $kind = $this->nightKind($p);
-            if ($kind === null) {
-                return false;
-            }
-            if ($step === 1) {
-                return $kind !== 'witch' && !($kind === 'shoot' && !empty($p->state['shotUsed']));
-            }
-            return $kind === 'witch'
-                && (empty($p->state['poisonUsed']) || (empty($p->state['healUsed']) && $this->night['victim']));
+            return $kind !== null && ($this->roleOf($p)['night']['step'] ?? 1) === $step && $this->canAct($p, $kind);
         }));
+    }
+
+    private function canAct(Player $p, string $kind): bool
+    {
+        return match ($kind) {
+            'witch' => empty($p->state['poisonUsed']) || (empty($p->state['healUsed']) && $this->night['victim']),
+            'guard' => $this->usesLeft($p) > 0 && $this->night['victim'] !== null,
+            'shoot' => empty($p->state['shotUsed']),
+            'haunt' => (bool)$this->validTargets($p, 'haunt'),
+            default => true,
+        };
+    }
+
+    /** Charges left for a limited power: team size (dead included) minus the charges already spent. */
+    private function usesLeft(Player $p): int
+    {
+        $team = $this->roleOf($p)['night']['limit']['countTeam'] ?? null;
+        if ($team === null) {
+            return PHP_INT_MAX;
+        }
+        $n = count(array_filter($this->players, fn(Player $q) => $this->teamOf($q) === $team));
+        return max(0, $n - (int)($p->state['guardUsed'] ?? 0));
     }
 
     /** @return Player[] */
@@ -708,6 +770,10 @@ final class Game
             'protect' => $alive,
             'hunter', 'inspect', 'block', 'shoot', 'poison' =>
                 array_values(array_filter($alive, static fn(Player $q) => $q->id !== $p->id)),
+            // a good ghost points at someone evil, an evil ghost at someone good; never at the dying
+            'haunt' => array_values(array_filter($alive, fn(Player $q) => $q->id !== $p->id
+                && !in_array($q->id, $this->night['dying'] ?? [], true)
+                && !empty($p->state['ghost']['evil']) === ($this->teamOf($q) !== 'evil'))),
             default => [],
         };
     }
@@ -752,6 +818,11 @@ final class Game
                 throw new GameError('You cannot poison that player.');
             }
             $action = ['heal' => $heal, 'poison' => $poison];
+        } elseif ($kind === 'guard') {
+            if (!is_bool($cmd['save'] ?? null)) {
+                throw new GameError('Invalid choice.');
+            }
+            $action = ['save' => $cmd['save']];
         } else {
             $target = $this->idOrNull($cmd['target'] ?? null);
             if ($target !== null && !$this->isValidTarget($p, $kind, $target)) {
@@ -769,11 +840,17 @@ final class Game
         $this->advanceNight();
     }
 
+    /** The current step is over: run the next step that has actors, or resolve the night. */
     private function advanceNight(): void
     {
-        if ($this->night['step'] === 1) {
-            $this->night['victim'] = $this->teamVictim($this->blockedSet());
-            $this->night['step'] = 2;
+        while ($this->night['step'] < 3) {
+            $done = $this->night['step'];
+            if ($done === 1) {
+                $this->night['victim'] = $this->teamVictim($this->blockedSet());
+            } elseif ($done === 2) {
+                $this->applyNightEffects();
+            }
+            $this->night['step'] = $done + 1;
             $this->night['actors'] = array_map(static fn(Player $p) => $p->id, $this->actorsForStep());
             if ($this->night['actors']) {
                 $this->seq++;
@@ -784,7 +861,7 @@ final class Game
                 return;
             }
         }
-        $this->resolveNight();
+        $this->finishNight();
     }
 
     /** @return array<string,true> */
@@ -818,7 +895,8 @@ final class Game
         return (string)$leaders[(int)floor($this->rand01() * count($leaders))];
     }
 
-    private function resolveNight(): void
+    /** Apply every night action (once, before the ghosts act): saves, potions, shots, inspections. */
+    private function applyNightEffects(): void
     {
         $blocked = $this->blockedSet();
         $acts = [];
@@ -848,6 +926,15 @@ final class Game
 
         $attacks = [];
         $healed = false;
+        $guarded = false;
+        foreach ($of('guard') as $x) {
+            $p = $x['p'];
+            if (!empty($x['a']['save']) && $victim && $this->usesLeft($p) > 0) {
+                $p->state['guardUsed'] = (int)($p->state['guardUsed'] ?? 0) + 1;
+                $guarded = true;
+                $this->note($p, "You shielded {$this->player($victim)->name} from tonight's attack.");
+            }
+        }
         foreach ($of('witch') as $x) {
             $p = $x['p'];
             if ($x['a']['heal'] && $victim && empty($p->state['healUsed'])) {
@@ -861,7 +948,8 @@ final class Game
                 $this->note($p, "You poisoned {$this->player($x['a']['poison'])->name}.");
             }
         }
-        if ($victim && !$healed) {
+        $wolfKills = $victim && !$healed && !$guarded;
+        if ($wolfKills) {
             $attacks[] = $victim;
         }
         foreach ($of('shoot') as $x) {
@@ -890,6 +978,32 @@ final class Game
             }
         }
 
+        // A player killed by the evil team whose role haunts rises as a ghost
+        $ghosts = [];
+        if ($wolfKills && in_array($victim, $dying, true)) {
+            $v = $this->player($victim);
+            $haunt = $this->roleOf($v)['haunt'] ?? null;
+            if ($haunt && ($haunt['trigger'] ?? null) === 'evil') {
+                $evil = $this->rand01() < (float)($haunt['evilChance'] ?? 0.5);
+                $v->state['ghost'] = ['evil' => $evil];
+                $ghosts[] = $v->id;
+                $good = $this->def['teams']['good']['name'];
+                $bad = $this->def['teams']['evil']['name'];
+                $this->note($v, $evil
+                    ? "Your ghost lingers, but death has turned you: you now side with the {$bad}. Point a finger at someone good to make the others doubt them."
+                    : "Your ghost lingers and you stay on the side of the {$good}. Point a finger at someone you believe belongs to the {$bad}.");
+            }
+        }
+        $this->night['dying'] = $dying;
+        $this->night['ghosts'] = $ghosts;
+    }
+
+    /** Dawn: announce the deaths (ghosts pointing a finger), kill, and move on to the day. */
+    private function finishNight(): void
+    {
+        $dying = $this->night['dying'] ?? [];
+        $ghosts = $this->night['ghosts'] ?? [];
+        $actions = $this->night['actions'];
         $this->night = null;
         $this->phase = 'resolving';
         if (!$dying) {
@@ -897,7 +1011,14 @@ final class Game
         }
         foreach ($dying as $id) {
             $p = $this->player($id);
-            $this->publicLog($this->text('foundDead', $p->name) . $this->revealSuffix($p), 'death');
+            $pick = in_array($id, $ghosts, true) ? ($actions[$id]['target'] ?? null) : null;
+            if ($pick && ($t = $this->player($pick))) {
+                // the haunting line always names the Ghost role, even when roles are not revealed
+                $this->publicLog($this->text('ghostFound', $p->name, $t->name) . $this->revealSuffix($p, true), 'death');
+                $this->marks[] = [$t->id, $p->id];
+            } else {
+                $this->publicLog($this->text('foundDead', $p->name) . $this->revealSuffix($p), 'death');
+            }
             $this->kill($p);
         }
         $this->afterDeaths('discussion');
@@ -912,6 +1033,9 @@ final class Game
         if (!$p->alive && $this->settings['revealRoles']) {
             return true;
         }
+        if (!empty($viewer->state['ghost'])) {
+            return true; // a ghost sees through everyone
+        }
         return $this->teamOf($viewer) === 'evil' && $this->teamOf($p) === 'evil';
     }
 
@@ -921,24 +1045,34 @@ final class Game
             return ['kind' => 'hunter', 'prompt' => 'You are dying. Choose who to shoot.', 'done' => false,
                 'targets' => array_map(static fn($q) => $q->id, $this->validTargets($p, 'hunter'))];
         }
-        if ($this->phase !== 'night' || !$p->alive || !$this->nightKind($p)) {
+        $kind = $this->phase === 'night' && $p->alive ? $this->nightKind($p) : null;
+        if ($kind === null) {
             return null;
         }
-        $n = $this->roleOf($p)['night'];
+        $n = $kind === 'haunt' ? $this->roleOf($p)['haunt'] : $this->roleOf($p)['night'];
         $mine = $this->night['actions'][$p->id] ?? null;
         if (!in_array($p->id, $this->night['actors'], true)) {
-            return ['kind' => $n['kind'], 'prompt' => $n['prompt'], 'waiting' => true];
+            return ['kind' => $kind, 'prompt' => $n['prompt'], 'waiting' => true];
         }
-        $out = ['kind' => $n['kind'], 'prompt' => $n['prompt'], 'done' => $mine !== null, 'choice' => $mine];
-        if ($n['kind'] === 'witch') {
+        $out = ['kind' => $kind, 'prompt' => $n['prompt'], 'done' => $mine !== null, 'choice' => $mine];
+        if ($kind === 'witch') {
             $v = $this->night['victim'];
             $out['victim'] = $v ? $this->player($v)->name : null;
             $out['canHeal'] = empty($p->state['healUsed']) && $v !== null;
             $out['canPoison'] = empty($p->state['poisonUsed']);
             $out['targets'] = array_map(static fn($q) => $q->id, $this->validTargets($p, 'poison'));
+        } elseif ($kind === 'guard') {
+            $v = $this->night['victim'];
+            $left = $this->usesLeft($p);
+            $out['victim'] = $v ? $this->player($v)->name : null;
+            $out['usesLeft'] = $left;
+            $out['canSave'] = $v !== null && $left > 0;
         } else {
-            $out['targets'] = array_map(static fn($q) => $q->id, $this->validTargets($p, $n['kind']));
-            if ($n['kind'] === 'kill') {
+            $out['targets'] = array_map(static fn($q) => $q->id, $this->validTargets($p, $kind));
+            if ($kind === 'haunt') {
+                $out['evil'] = !empty($p->state['ghost']['evil']);
+            }
+            if ($kind === 'kill') {
                 $team = [];
                 foreach ($this->night['actions'] as $id => $a) {
                     if ($this->teamOf($this->player((string)$id)) === 'evil') {
@@ -951,16 +1085,52 @@ final class Game
         return $out;
     }
 
+    /**
+     * The story shown once the game is over: the log, with chat messages interleaved at the point
+     * they were written (log entries carry `cs`, the last chat id at that moment). Which messages
+     * appear is a host setting: public chat and/or every non-public channel. Lobby and post-game
+     * chat is never included.
+     */
+    private function storyLog(): array
+    {
+        $pub = !empty($this->settings['storyPublicChat']);
+        $priv = !empty($this->settings['storyPrivateChat']);
+        $item = static fn(array $m, array $ctx) => ['round' => $ctx['round'] ?? 0, 'phase' => $ctx['phase'] ?? '', 'type' => 'chat',
+            'ch' => $m['ch'], 'from' => $m['from'], 'to' => $m['to'] ?? null, 'text' => $m['text']];
+        $eligible = static fn(array $m) => !in_array($m['ph'] ?? '', ['lobby', 'ended'], true) && ($m['ch'] === 'all' ? $pub : $priv);
+        $out = [];
+        $i = 0;
+        $n = count($this->chat);
+        $last = [];
+        foreach ($this->log as $entry) {
+            while ($i < $n && $this->chat[$i]['id'] <= ($entry['cs'] ?? 0)) {
+                if ($eligible($this->chat[$i])) {
+                    $out[] = $item($this->chat[$i], $entry);
+                }
+                $i++;
+            }
+            unset($entry['cs']);
+            $out[] = $last = $entry;
+        }
+        for (; $i < $n; $i++) {
+            if ($eligible($this->chat[$i])) {
+                $out[] = $item($this->chat[$i], $last);
+            }
+        }
+        return $out;
+    }
+
     /** What `$viewerId` is allowed to know. Never leak other players' hidden roles here. */
     public function viewFor(string $viewerId): array
     {
         $me = $this->player($viewerId);
         $role = $this->roleOf($me);
         $isEvil = ($role['team'] ?? null) === 'evil';
-        $chat = array_values(array_filter($this->chat, fn($m) =>
+        $chat = array_slice(array_values(array_filter($this->chat, fn($m) =>
             $m['ch'] === 'all'
             || ($m['ch'] === 'dead' && (!$me->alive || $this->phase === 'ended'))
-            || ($m['ch'] === 'evil' && $isEvil)));
+            || ($m['ch'] === 'evil' && $isEvil)
+            || ($m['ch'] === 'dm' && ($m['from'] === $me->id || ($m['to'] ?? null) === $me->id)))), -self::CHAT_KEEP);
         $players = [];
         foreach ($this->players as $p) {
             $row = ['id' => $p->id, 'name' => $p->name, 'avatarV' => $p->avatarV, 'hasAvatar' => $p->avatar !== null,
@@ -970,6 +1140,14 @@ final class Game
             }
             if ($p->role !== null && $this->canSeeRole($me, $p)) {
                 $row['role'] = $p->role;
+            }
+            if ($p->alive) {
+                foreach ($this->marks as [$target, $by]) {
+                    if ($target === $p->id && ($g = $this->player($by))) {
+                        $row['markedBy'] = $g->id;
+                        $row['markedText'] = $this->text('ghostMarked', $g->name);
+                    }
+                }
             }
             $players[] = $row;
         }
@@ -983,8 +1161,13 @@ final class Game
                 'id' => $me->id, 'role' => $me->role, 'team' => $role['team'] ?? null, 'alive' => $me->alive,
                 'isHost' => $me->id === $this->hostId, 'notes' => $me->notes, 'action' => $this->actionFor($me),
             ],
-            'log' => $this->log, 'chat' => $chat,
+            'log' => $this->phase === 'ended' ? $this->storyLog()
+                : array_map(static fn(array $e) => array_diff_key($e, ['cs' => 1]), $this->log),
+            'chat' => $chat,
         ];
+        if (!empty($me->state['ghost'])) {
+            $view['me']['ghost'] = ['evil' => !empty($me->state['ghost']['evil'])]; // only the ghost knows its side
+        }
         if ($this->phase === 'vote') {
             $view['votes'] = (object)$this->votes;
         }

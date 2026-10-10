@@ -6,6 +6,17 @@ const TIMERS = [
   { key: 'nightSeconds', label: 'Limit night action time', min: 15, max: 300, def: 45 },
 ];
 
+/** Human-readable lines for the game's settings (timers, reveal, chat in the story). */
+export function settingsLines(st) {
+  const time = (s) => (s > 0 ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` : 'no limit');
+  return [
+    `Discussion: ${time(st.discussionSeconds)}`, `Vote: ${time(st.voteSeconds)}`, `Night: ${time(st.nightSeconds)}`,
+    `Reveal character on death: ${st.revealRoles === false ? 'no' : 'yes'}`,
+    `Public chat in the final story: ${st.storyPublicChat ? 'yes' : 'no'}`,
+    `Private chat in the final story: ${st.storyPrivateChat ? 'yes' : 'no'}`,
+  ];
+}
+
 /**
  * Game setup form shared by "create" and the host's lobby "Edit settings".
  * initial: {name, description, roles{id:n}, settings{...}}. Returns {el, values(), validate()};
@@ -44,6 +55,10 @@ export function buildSetupForm(def, initial, onChange = () => {}) {
       </div>
       <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-reveal ${st.revealRoles === false ? '' : 'checked'} style="width:auto">
         Reveal the character of eliminated players</label>
+      <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-story-public ${st.storyPublicChat ? 'checked' : ''} style="width:auto">
+        Include the public chat in the final story</label>
+      <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-story-private ${st.storyPrivateChat ? 'checked' : ''} style="width:auto">
+        Include private chat (private messages, wolf night chat, graveyard) in the final story</label>
     </section>`;
 
   const q = (s) => el.querySelector(s);
@@ -84,6 +99,8 @@ export function buildSetupForm(def, initial, onChange = () => {}) {
     settings: {
       ...Object.fromEntries(TIMERS.map((t) => [t.key, q(`[data-limit="${t.key}"]`).checked ? q(`[data-secs="${t.key}"]`).value : 0])),
       revealRoles: q('[data-reveal]').checked,
+      storyPublicChat: q('[data-story-public]').checked,
+      storyPrivateChat: q('[data-story-private]').checked,
     },
   });
   validate();
