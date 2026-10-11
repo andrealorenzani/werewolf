@@ -8,6 +8,8 @@ Newest first. Maintained by the `documenter` agent for every player- or develope
 - `public/.htaccess`: `DirectoryIndex index.php`, clean URL `/how-to-play` (301 from `.php`), robots/sitemap routing, caching and compression.
 ### Changed
 - `public/index.html` replaced by `public/index.php` (same app, plus static home content). Game rooms and `?join`/`?create` screens are `noindex,nofollow` with an `X-Robots-Tag` header.
+### Fixed
+- `Seo::origin()` no longer includes the internal `/public` directory when the repo root is the web root (canonical, og and sitemap URLs were wrong); test added in `tests/SeoTest.php`.
 ### Removed
 - `public/index.html`. Deploy does not delete files, so remove it from the server manually.
 

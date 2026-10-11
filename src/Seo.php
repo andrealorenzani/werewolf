@@ -36,6 +36,8 @@ final class Seo
             $host = 'localhost';
         }
         $dir = rtrim(str_replace('\\', '/', dirname((string)($_SERVER['SCRIPT_NAME'] ?? '/'))), '/');
+        // when the repo root is the web root, the root .htaccess maps /x to public/x: the public/ part is not in the URL
+        $dir = preg_replace('#/public$#', '', $dir);
         return ($https ? 'https://' : 'http://') . $host . $dir;
     }
 

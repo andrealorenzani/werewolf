@@ -38,3 +38,9 @@ T::test('seo: sitemap lists every page, robots points to the sitemap', function 
     T::true(str_starts_with($s, '<?xml') && str_ends_with(trim($s), '</urlset>'), 'sitemap is XML');
     T::true(str_contains(Seo::robots(), 'Sitemap: http://example.test/sitemap.xml'), 'robots sitemap');
 });
+
+T::test('seo: origin ignores the internal /public directory', function () {
+    $_SERVER['HTTP_HOST'] = 'example.test';
+    $_SERVER['SCRIPT_NAME'] = '/public/sitemap.php';
+    T::same('http://example.test', Seo::origin());
+});
