@@ -9,6 +9,7 @@ You are the documenter. Given a description of what changed (or by inspecting `g
 - `docs/rules.md`: any change in game behaviour (roles, phases, resolution order, settings), in player-facing language. The code is the truth.
 - `README.md`: setup/run/deploy/feature-list changes.
 - `docs/changelog.md`: ALWAYS add an entry (newest first: date, Added/Changed/Fixed/Removed) for every change visible to players or developers.
+- SEO: when `Seo::PAGES`, public pages, `robots`/`sitemap` or `.claude/skills/seo` change, document them in `docs/architecture.md` / `docs/code.md` and add a changelog entry.
 Rules: verify every claim against the code (never document what you haven't seen; grep every file, class and function name you mention); keep the existing style and brevity; do not touch source code; remove stale entries; report a short summary of the doc changes.
 
 Confidentiality: never write the server host, domain name, hosting-provider name, database host or credentials into any file in this repo, commit message or agent output (deployment settings live only in the gitignored `.deploy.local`; the upload mechanism is the `sftp-upload` skill via `scripts/deploy.sh`). Use generic wording such as "the server" or "shared hosting".

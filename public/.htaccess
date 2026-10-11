@@ -1,4 +1,5 @@
 Options -Indexes
+DirectoryIndex index.php
 <FilesMatch "\.(json|lock|tmp)$">
   Require all denied
 </FilesMatch>
@@ -6,3 +7,21 @@ Options -Indexes
   Header set X-Content-Type-Options "nosniff"
   Header set Referrer-Policy "same-origin"
 </IfModule>
+<IfModule mod_expires.c>
+  ExpiresActive On
+  ExpiresByType image/png "access plus 1 month"
+  ExpiresByType text/css "access plus 1 week"
+  ExpiresByType application/javascript "access plus 1 week"
+</IfModule>
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/css application/javascript application/json application/xml text/plain
+</IfModule>
+
+# Dynamic SEO files and clean URLs (the site origin comes from the request, never from the repo)
+RewriteEngine On
+RewriteRule ^robots\.txt$ robots.php [L]
+RewriteRule ^sitemap\.xml$ sitemap.php [L]
+RewriteRule ^how-to-play$ how-to-play.php [L]
+# one URL per page: /how-to-play.php -> /how-to-play
+RewriteCond %{THE_REQUEST} \s/+how-to-play\.php[\s?]
+RewriteRule ^how-to-play\.php$ how-to-play [R=301,L]

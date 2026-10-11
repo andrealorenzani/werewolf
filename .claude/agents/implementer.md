@@ -12,3 +12,5 @@ You implement the plan you are given for the Werewolf & Mafia project.
 - Do not edit `docs/` (the documenter does). Report: files changed, behaviour added, deviations from the plan.
 
 Confidentiality: never write the server host, domain name, hosting-provider name, database host or credentials into any file in this repo, commit message or agent output (deployment settings live only in the gitignored `.deploy.local`; the upload mechanism is the `sftp-upload` skill via `scripts/deploy.sh`). Use generic wording such as "the server" or "shared hosting".
+
+SEO: for any change to a public page, copy, roles/games, routing or head markup, follow `.claude/skills/seo/SKILL.md`: static HTML content, `Wm\Seo::PAGES` entry and `updated` date, tests in `tests/SeoTest.php`, and run `seo_check.py` on the rendered pages. Private views stay `noindex`.

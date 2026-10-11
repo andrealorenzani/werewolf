@@ -86,7 +86,7 @@ lobby ─start→ discussion(day 0) ─→ night ─→ [hunter] ─→ discussi
 ## Directory layout
 | Path | Role |
 |---|---|
-| `public/` | Web root: `index.html`, `api.php`, `css/`, `js/` |
+| `public/` | Web root: `index.php` (home shell), `how-to-play.php`, `robots.php`, `sitemap.php`, `api.php`, `.htaccess`, `img/og.png`, `css/`, `js/` |
 | `src/` | PHP domain code (autoloaded as `Wm\`) |
 | `src/games/` | Data-only game definitions |
 | `config/` | Configuration |
@@ -110,6 +110,7 @@ lobby ─start→ discussion(day 0) ─→ night ─→ [hunter] ─→ discussi
 9. **Chat retention and story** – chat keeps the last 300 messages (1000 when a story option is on) so the end-of-game story can replay it; log items carry `cs` (last chat id) to interleave without storing chat twice. Private chat is only replayed if the host opted in at setup.
 10. **Host delete** – `Store::remove` deletes the game file under the same lock as writers, after a guard that only the host passes; non-hosts just forget the game locally.
 11. **Rules fixed to one variant** (plurality vote, no run-off, …) – see `rules.md`.
+12. **SEO: server-rendered shell, single page list, private views noindex** – the home is `public/index.php` (static intro + FAQ JSON-LD, then the JS app); `/how-to-play` renders rules and roles from `src/games`. `Wm\Seo::PAGES` is the one list of indexable pages and feeds `<head>` (title, description, canonical, Open Graph, JSON-LD), `robots.txt` and `sitemap.xml`. The site origin is derived from the request, so no domain is stored in the repo. Game rooms and the join/create screens (`?game`, `?join`, `?create`) use the same shell but get `noindex,nofollow` in the head and an `X-Robots-Tag` header. Project upkeep rules: `.claude/skills/seo/SKILL.md`.
 
 ## Deployment
 The site lives at the root of its own domain on shared hosting. The runtime tree (`public/`, `src/`, `config/config.php`, `data/` guards, root `.htaccess`) is uploaded to the server's root directory; the root `.htaccess` serves `public/` at `/` and denies everything else. Alternatively set the web directory to `public/`. `scripts/deploy.sh` uploads only changed runtime files of committed code (tests must pass) through the `sftp-upload` skill; target in gitignored `.deploy.local`, credentials outside the repo. Docs, tests, scripts and `.claude/` are never uploaded. Ensure PHP ≥ 8.2, a writable `data/` (or `data_dir` outside the web root). Use HTTPS. No host, domain or credential is ever written to tracked files. If a database is ever added, it must use only `werewolf_`-prefixed tables (see `CLAUDE.md`). Details in the README.

@@ -5,7 +5,9 @@
 ## Entry points and request flow
 | Entry | Flow |
 |---|---|
-| `public/index.html` | Static shell → `js/main.js` (router) → a view |
+| `public/index.php` | Server-rendered shell (`Seo::head`, static home content, FAQ JSON-LD; noindex + `X-Robots-Tag` for `?game/?join/?create`) → `js/main.js` (router) → a view |
+| `public/how-to-play.php` | Public rules/roles page built from `src/games`, served at `/how-to-play` |
+| `public/robots.php`, `public/sitemap.php` | Served as `/robots.txt`, `/sitemap.xml` (`Seo::robots()`, `Seo::sitemap()`); routing in `public/.htaccess` |
 | `public/api.php?a=<action>` | Reads JSON body → `Wm\Api::handle` → `Store` → `Game` → JSON |
 | `php tests/run.php` | Loads `tests/bootstrap.php` and every `tests/*Test.php` |
 
@@ -35,6 +37,7 @@ Errors: `{error}` with HTTP 400 (`GameError`) or 500.
 | `Player.php` | Plain data for one seat (incl. `profileAt` rate limit) |
 | `Config.php` | `normalize` (setup validation, limits 4–30 players, timer ranges, 0/empty = off), `profile` (name/avatar), `clean` |
 | `Store.php` | One JSON file per game: `create`, `peek`, `mutate` (flock + atomic write), `remove` (guarded delete under the lock), `sweep`, `validId` |
+| `Seo.php` | `PAGES` (indexable pages: title, description, `updated`), `head()` (meta, canonical, Open Graph, JSON-LD; noindex for private views), `robots()`, `sitemap()`, `origin()`/`url()` from the request |
 | `Games.php` | Registry of game ids, `get`, `publicList` |
 | `GameError.php` | Exception whose message is shown to players |
 | `games/werewolf.php`, `games/mafia.php` | Data-only definitions: teams, narration strings, roles |
@@ -67,10 +70,11 @@ No database. `data/<ID>.json` + `data/<ID>.lock` written by `Store`; layout of t
 | `bootstrap.php` | `T` assertions, `Clock`, `startedGame()`, `toNight()`, `act()` |
 | `EngineTest.php` | Rules: config, phases, night, vote, win, hunter, witch, escort, vigilante, visibility, chat, lazy timers, optional timers, composition/pool, late join, host settings, delete, DMs, story chat, paladin, ghost, profile, serialisation |
 | `ApiTest.php` | API + storage: create/join/poll/commands, delete, avatars, unchanged polls, lazy timers, id validation, sweep |
+| `SeoTest.php` | `Seo`: title/description lengths, indexable vs noindex head, JSON-LD, sitemap and robots |
 Naming: `T::test('what it proves', fn)`; one behaviour per test.
 
 ## Agentic workflow
-`CLAUDE.md` (conventions) · `.claude/commands/feature.md` (`/feature <text>`) · `.claude/agents/{architect,implementer,reviewer,documenter,deployer}.md`. Deployment: `scripts/deploy.sh [--all] [--dry-run]` (runs tests, uploads only changed runtime files from committed code via the `sftp-upload` skill; target in gitignored `.deploy.local`, template `.deploy.local.example`; last deployed commit in gitignored `.deploy-state`). Root `.htaccess` serves `public/` at the site root, redirects `/public/…` to `/…` and 404s `src|config|data|tests|docs|scripts|.claude|.git`. `docs/changelog.md`: one entry per visible change (documenter).
+`CLAUDE.md` (conventions) · `.claude/commands/feature.md` (`/feature <text>`) · `.claude/agents/{architect,implementer,reviewer,documenter,deployer}.md` · `.claude/skills/seo/SKILL.md` (SEO upkeep checklist). Deployment: `scripts/deploy.sh [--all] [--dry-run]` (runs tests, uploads only changed runtime files from committed code via the `sftp-upload` skill; target in gitignored `.deploy.local`, template `.deploy.local.example`; last deployed commit in gitignored `.deploy-state`). Root `.htaccess` serves `public/` at the site root, redirects `/public/…` to `/…` and 404s `src|config|data|tests|docs|scripts|.claude|.git`. `docs/changelog.md`: one entry per visible change (documenter).
 
 ## Where do I…?
 | Task | Where |
@@ -88,5 +92,7 @@ Naming: `T::test('what it proves', fn)`; one behaviour per test.
 | Add a page | new `views/*.js` + branch in `main.js` `route()` |
 | Change storage location | `config/config.local.php` |
 | Deploy / change what is uploaded | `scripts/deploy.sh` (`RUNTIME` regex), `.deploy.local` |
+| Add/change a public page, title, description, role/game copy | `Seo::PAGES` (bump `updated`), the page in `public/`, `public/.htaccess` route, `SeoTest.php`, `.claude/skills/seo/SKILL.md` |
+| Change robots/sitemap/meta tags | `Seo::robots`, `sitemap`, `head` |
 | Log a change | `docs/changelog.md` |
 | Add a test | `tests/EngineTest.php` (rules) or `ApiTest.php` (API) with `T::test` |

@@ -16,3 +16,5 @@ Check in priority order:
 Return a prioritised list (blocker / should-fix / nit) with `file:line` references.
 
 Confidentiality: never write the server host, domain name, hosting-provider name, database host or credentials into any file in this repo, commit message or agent output (deployment settings live only in the gitignored `.deploy.local`; the upload mechanism is the `sftp-upload` skill via `scripts/deploy.sh`). Use generic wording such as "the server" or "shared hosting".
+
+SEO check: public pages must be in `Seo::PAGES` (unique title/description, canonical, one h1, static content), `updated` bumped when content changed, private views noindex and absent from the sitemap, no domain hard-coded in tracked files. Report drift from `.claude/skills/seo/SKILL.md` as an issue.

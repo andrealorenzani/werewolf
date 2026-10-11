@@ -19,6 +19,10 @@ Read `docs/architecture.md` and `docs/code.md` (and `docs/rules.md` for behaviou
 New features go through `/feature <description>` (architect → implementer → reviewer → documenter → commit → deployer). After any code change that alters structure, behaviour or API, invoke the `documenter` agent. Only the `documenter` edits `docs/` and `README.md`.
 - **Changelog**: `docs/changelog.md` must get an entry (by the `documenter`) for every player- or developer-visible change.
 
+## SEO
+- Public pages (`/`, `/how-to-play`) are SEO-optimised and listed in `Wm\Seo::PAGES`; game rooms/join/create are `noindex`. Follow `.claude/skills/seo/SKILL.md` (and the global `seo-page` skill) for **every** change that touches a public page, copy, roles/games, routing or head markup: update the static content, bump `updated`, keep `sitemap`/`robots` correct, run the linter.
+- Never write the domain in tracked files: the origin is derived from the request.
+
 ## Deployment
 - **Every change must end up on the server**: after committing, run `scripts/deploy.sh` (or the `deployer` agent). It uses the `sftp-upload` skill; target and options are in the gitignored `.deploy.local` (template: `.deploy.local.example`), credentials in `~/.password`.
 - The site lives at the root of its own domain: the whole runtime tree is uploaded to the server's root directory and the root `.htaccess` serves `public/` at `/`. Docs, tests, scripts and `.claude/` are not uploaded. Keep URLs relative.

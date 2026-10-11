@@ -13,3 +13,5 @@ You are the architect of the Werewolf & Mafia project (plain PHP 8.2+ on shared 
 Do not write code or edit files.
 
 Confidentiality: never write the server host, domain name, hosting-provider name, database host or credentials into any file in this repo, commit message or agent output (deployment settings live only in the gitignored `.deploy.local`; the upload mechanism is the `sftp-upload` skill via `scripts/deploy.sh`). Use generic wording such as "the server" or "shared hosting".
+
+SEO: if the feature adds or changes a public page, copy, role/game or routing, the plan must list the SEO work from `.claude/skills/seo/SKILL.md` (`Seo::PAGES`, static content, `updated`, sitemap, noindex for private views).

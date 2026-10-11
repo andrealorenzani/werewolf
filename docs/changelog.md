@@ -2,6 +2,15 @@
 
 Newest first. Maintained by the `documenter` agent for every player- or developer-visible change.
 
+## 2026-10-11
+### Added
+- SEO: `Wm\Seo` (`PAGES`, `head`, `robots`, `sitemap`); public `/how-to-play` page (rules and role lists generated from `src/games`); `/robots.txt` and `/sitemap.xml` generated per request (no domain stored in the repo); Open Graph image `public/img/og.png`; JSON-LD (WebSite, WebPage, FAQ on the home, breadcrumbs); `tests/SeoTest.php`; project skill `.claude/skills/seo/SKILL.md` and SEO duties in `CLAUDE.md`, the agents and `/feature`.
+- `public/.htaccess`: `DirectoryIndex index.php`, clean URL `/how-to-play` (301 from `.php`), robots/sitemap routing, caching and compression.
+### Changed
+- `public/index.html` replaced by `public/index.php` (same app, plus static home content). Game rooms and `?join`/`?create` screens are `noindex,nofollow` with an `X-Robots-Tag` header.
+### Removed
+- `public/index.html`. Deploy does not delete files, so remove it from the server manually.
+
 ## 2026-10-10 (2)
 ### Added
 - Host can delete a game for everyone: API action `delete` (`Api::deleteGame`, `Store::remove`, `Game::canDelete`). The home "Remove" button deletes it for the host; for other players it only forgets the game locally.

@@ -36,12 +36,14 @@ Open http://localhost:8000. To play with other devices on your network, start wi
 
 Deployment is done by `scripts/deploy.sh [--all] [--dry-run]`: it requires a clean committed tree and passing tests, then uploads only the changed runtime files (no docs, tests, scripts). The target is configured in the gitignored `.deploy.local` (copy `.deploy.local.example`); credentials stay outside the repo. The site is served from the domain root. Never commit host names or credentials.
 
+SEO: the home page and `/how-to-play` are indexable; `robots.txt` and `sitemap.xml` are generated from `Wm\Seo::PAGES` using the request's host (nothing to configure). Game rooms are `noindex`. The deploy only uploads, it never deletes: the old `public/index.html` (replaced by `index.php`) must be removed from the server manually.
+
 Games are deleted after 24 h of inactivity. Timers are evaluated when a player's browser polls, so a game with nobody connected simply waits.
 
 ## Project structure
 ```
-public/   web root: index.html, api.php, css/, js/ (vanilla JS client)
-src/      PHP engine (Game, Api, Store, Config…) and src/games/ role definitions
+public/   web root: index.php, how-to-play.php, robots.php, sitemap.php, api.php, css/, js/ (vanilla JS client)
+src/      PHP engine (Game, Api, Store, Config…), Seo.php and src/games/ role definitions
 config/   configuration
 data/     runtime game files (not served)
 tests/    dependency-free test runner

@@ -14,3 +14,5 @@ The server's root directory is the site root: the whole runtime tree (root `.hta
 
 
 Confidentiality: never write the server host, domain name, hosting-provider name, database host or credentials into any file in this repo, commit message or agent output (deployment settings live only in the gitignored `.deploy.local`; the upload mechanism is the `sftp-upload` skill via `scripts/deploy.sh`). Use generic wording such as "the server" or "shared hosting".
+
+SEO: after deploying, remind the user once that `/sitemap.xml` should be submitted to Google Search Console and Bing Webmaster Tools (needs their account). `public/index.html` was replaced by `index.php`; if the script reports it as "not removed on server", tell the user to delete the old file manually. Never print the domain.
