@@ -23,8 +23,9 @@ export async function openRoom(app, gameId, navigate) {
   let version = -1;
   const requested = new Set();  // avatar keys already fetched or being fetched
   let showRole = false;
-  let sel = null;               // selected target (night action)
+  let sel = null;               // selected target (night action / vote), local until confirmed
   let witch = { heal: false, poison: '' };
+  let voteClosedSeq = -1;       // the vote popup was closed during this phase (it can be reopened)
   let lastSeq = -1;
   let offset = 0;               // server clock - client clock
 
@@ -45,6 +46,18 @@ export async function openRoom(app, gameId, navigate) {
           <form class="chat-form" data-chat-form><select name="to" aria-label="Send to"><option value="">Everyone</option></select>
             <input name="text" maxlength="300" autocomplete="off" placeholder="Say something…"><button>Send</button></form>
           <p class="small muted" data-chat-hint></p></div>
+      </div>
+    </div>
+    <div class="dialog-overlay" data-modal role="dialog" aria-modal="true" aria-labelledby="modal-title" hidden>
+      <div class="dialog-box stack">
+        <div class="row spread"><h2 id="modal-title" data-m-title style="margin:0"></h2>
+          <span class="row"><span class="timer" data-m-timer></span><button type="button" class="link" data-m-close aria-label="Close" hidden>✕</button></span></div>
+        <div data-m-body class="stack"></div>
+        <div data-m-chat-wrap hidden>
+          <div class="chat-list" data-m-chat></div>
+          <form class="chat-form" data-m-chat-form><input name="text" maxlength="300" autocomplete="off" placeholder="Talk to your pack…"><button>Send</button></form>
+        </div>
+        <div data-m-foot class="row"></div>
       </div>
     </div>`;
 
@@ -122,6 +135,7 @@ export async function openRoom(app, gameId, navigate) {
     badge.textContent = (state.round && state.phase !== 'lobby' && state.phase !== 'ended' ? `${PHASE_LABEL[state.phase]} · round ${state.round}` : PHASE_LABEL[state.phase]);
     badge.className = `badge ${state.phase === 'night' ? 'night' : state.phase === 'discussion' || state.phase === 'vote' ? 'day' : ''}`;
     renderBanner(); renderRole(); renderSettingsList(); renderAction(); renderNotes(); renderLobby(); closeStaleEditors(); renderPlayers(); renderLog(); renderChat();
+    renderModal();
     updateTimer();
   }
 
@@ -163,11 +177,13 @@ export async function openRoom(app, gameId, navigate) {
   }
 
 
+  /** The inline action panel: discussion button, status lines. Night actions, the hunter shot and the vote live in the popup. */
   function renderAction() {
     const el = $('[data-action]', app);
     const me = state.me;
     el.hidden = state.phase === 'lobby' && !me.isHost;
     const a = me.action;
+    const popup = !!popupSpec();
     let html = '';
     if (state.phase === 'lobby') {
       html = ''; el.hidden = true;
@@ -183,49 +199,122 @@ export async function openRoom(app, gameId, navigate) {
         ${me.isHost ? '<button data-skip class="danger">Skip discussion (host)</button>' : ''}`;
     } else if (state.phase === 'vote') {
       const mine = state.votes?.[me.id];
-      html = `<h3>Vote</h3><p>Tap a player to vote for their elimination. You can change your vote until everyone has voted.</p>
+      html = `<h3>Vote</h3>
         <p>${mine ? `Your vote: <b>${esc(player(mine).name)}</b>` : mine === null ? 'You abstained.' : 'You have not voted yet.'}</p>
-        <button data-abstain>Abstain</button>
-        ${me.isHost ? '<button data-skip class="danger">End vote (host)</button>' : ''}`;
-    } else if (state.phase === 'hunter' && a) {
-      html = actionForm(a);
-    } else if (state.phase === 'hunter') {
+        ${popup ? '' : '<button class="primary" data-open-vote>Open the voting popup</button>'}
+        ${me.isHost && !popup ? '<button data-skip class="danger">End vote (host)</button>' : ''}`;
+    } else if (state.phase === 'hunter' && !a) {
       html = `<h3>Hunter</h3><p class="muted">The hunter is taking a last shot…</p>`;
-    } else if (state.phase === 'night') {
-      html = a && !a.waiting ? actionForm(a)
-        : `<h3>Night</h3><p class="muted">${a ? 'Waiting for the others… keep your eyes closed.' : 'You sleep. Eyes closed… the village is quiet.'}</p>`;
+    } else if (state.phase === 'night' && !popup) {
+      html = `<h3>Night</h3><p class="muted">You sleep. Eyes closed… the village is quiet.</p>`;
     }
-    if (me.isHost && (state.phase === 'night' || state.phase === 'hunter')) {
+    if (me.isHost && !popup && (state.phase === 'night' || state.phase === 'hunter')) {
       html += `<button data-skip class="danger">${state.phase === 'night' ? 'Skip night step' : 'Skip hunter shot'} (host)</button>`;
     }
     setHtml(el, html);
+    el.hidden = el.hidden || !html;
   }
 
-  function actionForm(a) {
-    const chosen = sel ?? a.choice?.target ?? null;
+  // ---------- popup (night action, hunter shot, vote) ----------
+  /** Grid of players to pick from. mode: 'pick' | 'vote' | 'suggest'. marks: playerId -> small caption. */
+  function targetGrid(ids, mode, chosen, marks = {}) {
+    return `<div class="target-grid">${ids.map((id) => {
+      const p = player(id);
+      return `<button type="button" class="target ${chosen === id ? 'selected' : ''}" data-target="${esc(id)}" data-mode="${mode}">${av(p)}
+        <span class="name">${esc(p.name)}</span>${marks[id] ? `<span class="small muted">${esc(marks[id])}</span>` : ''}</button>`;
+    }).join('') || '<p class="muted">Nobody to choose.</p>'}</div>`;
+  }
+
+  const skipFoot = (label) => (state.me.isHost ? `<button type="button" data-skip class="danger">${label} (host)</button>` : '');
+
+  /** What the popup shows right now, or null: { title, body, foot, closable, chat }. */
+  function popupSpec() {
+    const me = state.me, a = me.action;
+    if (state.phase === 'hunter' && a?.kind === 'hunter') {
+      const chosen = sel ?? a.choice?.target ?? null;
+      return { title: '🏹 Your last shot', foot: skipFoot('Skip hunter shot'), body: `<p>${esc(a.prompt)}</p>${targetGrid(a.targets, 'pick', chosen)}
+        <div class="row"><button class="primary" data-confirm ${chosen ? '' : 'disabled'}>Shoot</button><button data-pass>Don't shoot</button></div>` };
+    }
+    if (state.phase === 'night' && me.alive) {
+      const chat = me.team === 'evil';
+      if (!a || a.waiting) {
+        return { title: '🌙 It is night…', chat, foot: skipFoot('Skip night step'),
+          body: `<p class="muted">${a ? 'Waiting for the others… keep your eyes closed.' : 'The village sleeps. Keep your eyes closed.'}</p>` };
+      }
+      return { title: `${roleOrGhost(a)}`, chat, foot: skipFoot('Skip night step'), body: nightBody(a) };
+    }
+    if (state.phase === 'vote' && me.alive && voteClosedSeq !== state.seq) {
+      const mine = state.votes?.[me.id];
+      const chosen = sel ?? mine ?? null;
+      const ids = state.players.filter((p) => p.alive && p.id !== me.id).map((p) => p.id);
+      return { title: '🗳️ Vote', closable: true, foot: skipFoot('End vote'), body: `<p>Who should be eliminated? You can change your vote until everyone has voted.</p>
+        <p class="small muted">${mine ? `Your vote: ${esc(player(mine).name)}` : mine === null ? 'You abstained.' : 'You have not voted yet.'}</p>
+        ${targetGrid(ids, 'vote', chosen)}
+        <div class="row"><button class="primary" data-vote-confirm ${chosen && chosen !== mine ? '' : 'disabled'}>Confirm vote</button><button data-abstain>Abstain</button></div>` };
+    }
+    return null;
+  }
+
+  function roleOrGhost(a) {
+    if (a.kind === 'haunt') return '👻 Your ghost';
+    const r = roleDef(state.me.role);
+    return r ? `${r.icon} ${esc(r.name)}` : 'Night';
+  }
+
+  function nightBody(a) {
+    const note = a.done ? '<p class="small muted">Submitted. Waiting for the night to end.</p>' : '';
     if (a.kind === 'witch') {
-      const opts = a.targets.map((id) => `<option value="${id}" ${witch.poison === id ? 'selected' : ''}>${esc(player(id).name)}</option>`).join('');
-      return `<h3>${esc(a.prompt)}</h3>
+      const opts = a.targets.map((id) => `<option value="${esc(id)}" ${witch.poison === id ? 'selected' : ''}>${esc(player(id).name)}</option>`).join('');
+      return `<p>${esc(a.prompt)}</p>
         <p>${a.victim ? `The victim tonight is <b>${esc(a.victim)}</b>.` : 'Nobody was attacked tonight.'}</p>
         ${a.canHeal ? `<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-heal style="width:auto" ${witch.heal ? 'checked' : ''}> Use healing potion on ${esc(a.victim)}</label>` : '<p class="muted small">Healing potion unavailable.</p>'}
         ${a.canPoison ? `<label>Poison</label><select data-poison><option value="">— nobody —</option>${opts}</select>` : '<p class="muted small">Poison already used.</p>'}
-        <button class="primary" data-witch>${a.done ? 'Update' : 'Confirm'}</button>
-        ${a.done ? '<p class="small muted">Submitted. Waiting for the night to end.</p>' : ''}`;
+        <button class="primary" data-witch>${a.done ? 'Update' : 'Confirm'}</button>${note}`;
     }
     if (a.kind === 'guard') {
-      return `<h3>${esc(a.prompt)}</h3>
-        <p>Victim tonight is <b>${esc(a.victim)}</b>.</p>
+      const mates = Object.entries(a.teamChoices ?? {}).map(([id, v]) => `<div class="small muted">${esc(player(id)?.name)}: ${v ? 'saves them' : 'lets fate decide'}</div>`).join('');
+      return `<p>${esc(a.prompt)}</p><p>Victim tonight is <b>${esc(a.victim)}</b>.</p>
+        ${(state.me.mates ?? []).length ? `<p class="small muted">Fellow paladins must all agree to shield. ${mates || 'They have not chosen yet.'}</p>` : ''}
         <div class="row"><button class="primary" data-guard="true">Save them (${a.usesLeft} left)</button>
         <button data-guard="false">Let fate decide</button></div>
         ${a.done ? `<p class="small muted">Submitted (${a.choice?.save ? 'saving them' : 'letting fate decide'}). Waiting for the night to end.</p>` : ''}`;
     }
-    const team = a.teamChoices
-      ? Object.entries(a.teamChoices).map(([id, t]) => `<div class="small muted">${esc(player(id)?.name)} → ${t ? esc(player(t).name) : 'nobody'}</div>`).join('') : '';
-    return `<h3>${esc(a.prompt)}</h3>
-      <p>${chosen ? `Selected: <b>${esc(player(chosen).name)}</b>` : 'Tap a highlighted player.'}</p>${team}
+    if (a.kind === 'kill') {
+      const marks = {};
+      for (const [wid, tid] of Object.entries(a.teamChoices ?? {})) marks[tid] = [marks[tid], player(wid)?.name].filter(Boolean).join(', ');
+      const target = a.agreedTarget ? player(a.agreedTarget)?.name : null;
+      const confirmed = (a.confirmed ?? []).map((id) => player(id)?.name).filter(Boolean);
+      return `<p>${esc(a.prompt)}</p>
+        <p class="small muted">${target ? `You agree on <b>${esc(target)}</b>. Everyone must confirm.` : 'Tap a player to suggest them. You all need to pick the same one.'}</p>
+        ${targetGrid(a.targets, 'suggest', a.mine ?? null, marks)}
+        <div class="row"><button class="primary" data-wolf-confirm ${a.agreed && !a.done ? '' : 'disabled'}>${a.done ? '✓ Confirmed' : target ? `Confirm ${esc(target)}` : 'Confirm'}</button></div>
+        <p class="small muted">${confirmed.length ? `Confirmed: ${esc(confirmed.join(', '))}` : 'Nobody has confirmed yet.'}</p>`;
+    }
+    const chosen = sel ?? a.choice?.target ?? null;
+    return `<p>${esc(a.prompt)}</p>${targetGrid(a.targets, 'pick', chosen)}
       <div class="row"><button class="primary" data-confirm ${chosen ? '' : 'disabled'}>${a.done ? 'Update' : 'Confirm'}</button>
-      <button data-pass>${a.kind === 'hunter' ? "Don't shoot" : a.kind === 'haunt' ? "Don't point" : 'Skip'}</button></div>
+      <button data-pass>${a.kind === 'haunt' ? "Don't point" : 'Skip'}</button></div>
       ${a.done ? `<p class="small muted">Submitted${a.choice?.target ? '' : ' (skip)'}. Waiting for the night to end.</p>` : ''}`;
+  }
+
+  function renderModal() {
+    const box = $('[data-modal]', app);
+    const spec = popupSpec();
+    box.hidden = !spec;
+    if (!spec) { setHtml($('[data-m-body]', box), ''); return; }
+    setHtml($('[data-m-title]', box), spec.title);
+    setHtml($('[data-m-body]', box), spec.body);
+    setHtml($('[data-m-foot]', box), spec.foot ?? '');
+    $('[data-m-close]', box).hidden = !spec.closable;
+    $('[data-m-chat-wrap]', box).hidden = !spec.chat;
+    if (spec.chat) {
+      const list = $('[data-m-chat]', box);
+      const atBottom = list.scrollTop + list.clientHeight >= list.scrollHeight - 30;
+      setHtml(list, chatHtml());
+      if (atBottom) list.scrollTop = list.scrollHeight;
+      const form = $('[data-m-chat-form]', box);
+      form.text.disabled = !canChat();
+    }
   }
 
   function renderNotes() {
@@ -309,15 +398,9 @@ export async function openRoom(app, gameId, navigate) {
   }
 
   function renderPlayers() {
-    const a = state.me.action;
-    const canTarget = (state.phase === 'night' || state.phase === 'hunter') && a && !a.waiting && a.kind !== 'witch' ? new Set(a.targets) : new Set();
-    const voting = state.phase === 'vote' && state.me.alive;
     const tally = {};
     for (const t of Object.values(state.votes ?? {})) if (t) tally[t] = (tally[t] ?? 0) + 1;
-    const chosen = sel ?? a?.choice?.target ?? null;
     const html = state.players.map((p) => {
-      const selectable = (voting && p.alive && p.id !== state.me.id) || canTarget.has(p.id);
-      const picked = voting ? state.votes?.[state.me.id] === p.id : chosen === p.id;
       const r = p.role ? roleDef(p.role) : null;
       const status = state.phase === 'lobby' ? (p.id === state.hostId ? '👑 host' : '')
         : !p.alive ? `☠ ${r ? esc(r.name) : 'out'}` : r ? `${r.icon} ${esc(r.name)}`
@@ -325,11 +408,10 @@ export async function openRoom(app, gameId, navigate) {
       const flag = p.markedText ? ` <span class="flag">⚑ ${esc(p.markedText)}</span>` : '';
       const kick = state.phase === 'lobby' && state.me.isHost && p.id !== state.me.id
         ? ` <span class="link" role="button" tabindex="0" data-kick="${p.id}" title="Remove">✕</span>` : '';
-      return `<button class="player ${p.alive ? '' : 'dead'} ${p.markedBy ? 'marked' : ''} ${selectable ? 'selectable' : ''} ${picked ? 'selected' : ''} ${p.id === state.me.id ? 'me' : ''}"
-        ${selectable ? `data-target="${p.id}"` : 'tabindex="-1"'} type="button">
+      return `<div class="player ${p.alive ? '' : 'dead'} ${p.markedBy ? 'marked' : ''} ${p.id === state.me.id ? 'me' : ''}">
         ${av(p)}<span class="meta"><span class="name">${esc(p.name)}</span>
         <span class="small muted"><span class="dot ${p.connected ? '' : 'off'}"></span>${status}${kick}${flag}</span></span>
-        ${tally[p.id] ? `<span class="tally">${tally[p.id]}</span>` : ''}</button>`;
+        ${tally[p.id] ? `<span class="tally">${tally[p.id]}</span>` : ''}</div>`;
     }).join('');
     setHtml($('[data-players]', app), html);
   }
@@ -353,15 +435,19 @@ export async function openRoom(app, gameId, navigate) {
     return state.me.team === 'evil';
   }
 
-  function renderChat() {
-    const el = $('[data-chat]', app);
-    const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 30;
-    setHtml(el, state.chat.map((m) => {
+  function chatHtml() {
+    return state.chat.map((m) => {
       const p = player(m.from);
       if (m.ch === 'dm') return `<p class="ch-dm"><b>${esc(p?.name ?? '?')}</b> → <b>${esc(player(m.to)?.name ?? '?')}</b> <span class="small">(private)</span>: ${esc(m.text)}</p>`;
       const tag = m.ch === 'dead' ? ' <span class="small">(graveyard)</span>' : m.ch === 'evil' ? ` <span class="small">(${esc(def.teams.evil.name)})</span>` : '';
       return `<p class="ch-${m.ch}"><b>${esc(p?.name ?? '?')}</b>${tag}: ${esc(m.text)}</p>`;
-    }).join('') || '<p class="muted small">No messages yet.</p>');
+    }).join('') || '<p class="muted small">No messages yet.</p>';
+  }
+
+  function renderChat() {
+    const el = $('[data-chat]', app);
+    const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 30;
+    setHtml(el, chatHtml());
     if (atBottom) el.scrollTop = el.scrollHeight;
     const form = $('[data-chat-form]', app);
     const ok = canChat();
@@ -404,17 +490,20 @@ export async function openRoom(app, gameId, navigate) {
 
   // ---------- timer ----------
   function updateTimer() {
-    const el = $('[data-timer]', app);
-    if (!state?.deadline) { el.textContent = ''; return; }
-    const s = Math.max(0, Math.ceil((state.deadline - (Date.now() + offset)) / 1000));
-    el.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+    let text = '';
+    if (state?.deadline) {
+      const s = Math.max(0, Math.ceil((state.deadline - (Date.now() + offset)) / 1000));
+      text = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+    }
+    $('[data-timer]', app).textContent = text;
+    $('[data-m-timer]', app).textContent = text;
   }
   const tick = setInterval(() => { if (!app.isConnected) return stop(); updateTimer(); }, 500);
-  function stop() { closed = true; closePhotoDialog(); clearInterval(tick); clearTimeout(pollTimer); }
+  function stop() { closed = true; document.removeEventListener('keydown', onKey); closePhotoDialog(); clearInterval(tick); clearTimeout(pollTimer); }
 
   // ---------- events ----------
   app.addEventListener('click', (e) => {
-    const t = e.target.closest('[data-toggle-role],[data-ready],[data-skip],[data-abstain],[data-target],[data-confirm],[data-pass],[data-witch],[data-guard],[data-start],[data-copy],[data-kick],[data-leave],[data-home],[data-edit-settings],[data-edit-profile]');
+    const t = e.target.closest('[data-toggle-role],[data-ready],[data-skip],[data-abstain],[data-target],[data-confirm],[data-vote-confirm],[data-wolf-confirm],[data-open-vote],[data-m-close],[data-pass],[data-witch],[data-guard],[data-start],[data-copy],[data-kick],[data-leave],[data-home],[data-edit-settings],[data-edit-profile]');
     if (!t) return;
     const d = t.dataset;
     if ('toggleRole' in d) { showRole = !showRole; renderRole(); }
@@ -422,9 +511,13 @@ export async function openRoom(app, gameId, navigate) {
     else if ('skip' in d) send({ t: 'skip' });
     else if ('abstain' in d) send({ t: 'vote', target: null });
     else if ('target' in d) {
-      if (state.phase === 'vote') send({ t: 'vote', target: d.target });
-      else { sel = d.target; renderAction(); renderPlayers(); }
+      if (d.mode === 'suggest') send({ t: 'action', target: d.target });
+      else { sel = d.target; renderModal(); }
     }
+    else if ('voteConfirm' in d) send({ t: 'vote', target: sel });
+    else if ('wolfConfirm' in d) send({ t: 'action', confirm: true });
+    else if ('openVote' in d) { voteClosedSeq = -1; render(); }
+    else if ('mClose' in d) { voteClosedSeq = state.seq; render(); }
     else if ('confirm' in d) send({ t: 'action', target: sel ?? state.me.action?.choice?.target });
     else if ('pass' in d) send({ t: 'action', target: null });
     else if ('guard' in d) send({ t: 'action', save: d.guard === 'true' });
@@ -444,6 +537,14 @@ export async function openRoom(app, gameId, navigate) {
   app.addEventListener('change', (e) => {
     if (e.target.matches('[data-heal]')) witch.heal = e.target.checked;
     if (e.target.matches('[data-poison]')) witch.poison = e.target.value;
+  });
+  const onKey = (e) => { if (e.key === 'Escape' && state && popupSpec()?.closable) { voteClosedSeq = state.seq; render(); } };
+  document.addEventListener('keydown', onKey);
+  $('[data-m-chat-form]', app).addEventListener('submit', (e) => {
+    e.preventDefault();
+    const input = e.target.text;
+    if (input.value.trim()) send({ t: 'chat', text: input.value });
+    input.value = '';
   });
   $('[data-chat-form]', app).addEventListener('submit', (e) => {
     e.preventDefault();

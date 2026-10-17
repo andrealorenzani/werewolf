@@ -12,17 +12,56 @@ final class Config
     public const DEFAULT_SETTINGS = [
         'discussionSeconds' => 0, // 0 = no time limit
         'voteSeconds' => 0,
-        'nightSeconds' => 0,
+        'nightSeconds' => self::NIGHT_DEFAULT, // mandatory, never 0
         'revealRoles' => true, // reveal the role of eliminated players
         'storyPublicChat' => false,  // replay the public chat in the final story
         'storyPrivateChat' => false, // replay DMs, wolf night chat and graveyard chat in the final story
     ];
 
+    public const NIGHT_DEFAULT = 60;
+    public const NIGHT_MIN = 30;
+    public const NIGHT_MAX = 90;
+
+    /** Optional timers: missing / empty / 0 = no limit. */
     private const RANGES = [
         'discussionSeconds' => [15, 900],
         'voteSeconds' => [10, 300],
-        'nightSeconds' => [15, 300],
     ];
+
+    /** Night step length: always on. Empty, 0 or garbage = default, otherwise clamped to 30-90. */
+    public static function nightSeconds(mixed $raw): int
+    {
+        if (!is_numeric($raw) || (float)$raw <= 0) {
+            return self::NIGHT_DEFAULT;
+        }
+        return (int)min(self::NIGHT_MAX, max(self::NIGHT_MIN, round((float)$raw)));
+    }
+
+    /**
+     * Highest allowed count of a role given the other counts: its `max` and, when it has one, its `cap`
+     * (see src/games/werewolf.php). $nonEvil overrides the number of non-evil cards (used for a partial deal).
+     * @param array<string,int> $counts role id => count
+     */
+    public static function capFor(array $role, array $counts, array $def, ?int $nonEvil = null): int
+    {
+        $max = (int)($role['max'] ?? 1);
+        $cap = $role['cap'] ?? null;
+        if ($cap === null) {
+            return $max;
+        }
+        if (isset($cap['nonEvil'])) {
+            if ($nonEvil === null) {
+                $nonEvil = 0;
+                foreach ($def['roles'] as $r) {
+                    if ($r['team'] !== 'evil' && empty($r['legacy'])) {
+                        $nonEvil += (int)($counts[$r['id']] ?? 0);
+                    }
+                }
+            }
+            return min($max, (int)ceil($nonEvil / $cap['nonEvil']));
+        }
+        return min($max, (int)($counts[$cap['count']] ?? 0));
+    }
 
     public static function clean(mixed $s, int $max): string
     {
@@ -42,6 +81,9 @@ final class Config
         $counts = [];
         $total = 0;
         foreach ($def['roles'] as $role) {
+            if (!empty($role['legacy'])) {
+                continue; // old cards still in saved games: not selectable any more
+            }
             $raw = $input['roles'][$role['id']] ?? 0;
             if (!is_numeric($raw) || (int)$raw != $raw || (int)$raw < 0) {
                 throw new GameError("Invalid count for {$role['name']}.");
@@ -58,6 +100,15 @@ final class Config
             $counts[$role['id']] = $n;
             $total += $n;
         }
+        foreach ($def['roles'] as $role) {
+            if (!empty($role['legacy']) || !isset($role['cap'])) {
+                continue;
+            }
+            $cap = self::capFor($role, $counts, $def);
+            if ($counts[$role['id']] > $cap) {
+                throw new GameError("At most {$cap} {$role['name']} allowed with this setup.");
+            }
+        }
         if ($total < self::MIN_PLAYERS) {
             throw new GameError('At least ' . self::MIN_PLAYERS . ' players are needed.');
         }
@@ -69,7 +120,7 @@ final class Config
             $sum = 0;
             foreach ($def['roles'] as $r) {
                 if ($r['team'] === $team) {
-                    $sum += $counts[$r['id']];
+                    $sum += $counts[$r['id']] ?? 0;
                 }
             }
             return $sum;
@@ -94,6 +145,7 @@ final class Config
             $v = (float)$raw;
             $settings[$key] = $v <= 0 ? 0 : (int)min($hi, max($lo, round($v)));
         }
+        $settings['nightSeconds'] = self::nightSeconds($input['settings']['nightSeconds'] ?? null);
         if (isset($input['settings']['revealRoles'])) {
             $settings['revealRoles'] = (bool)$input['settings']['revealRoles'];
         }

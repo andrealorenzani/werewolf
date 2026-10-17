@@ -2,6 +2,23 @@
 
 Newest first. Maintained by the `documenter` agent for every player- or developer-visible change.
 
+## 2026-10-17
+### Added
+- Evil kill (Werewolf and Mafia) is suggest-then-confirm: `action{target}` suggests, `action{confirm:true}` confirms once all living killers suggest the same player; no pass; timeout/host skip picks randomly among distinct suggestions, none means nobody dies. Views `teamChoices`, `agreed`, `agreedTarget`, `confirmed`, `mine` only for the living evil team.
+- Werewolf setup caps (`cap` in `src/games/werewolf.php`, `Config::capFor`, mirrored in `setup.js`): villagers 3-20; werewolves 1 to ceil(non-wolves/3); Seer max 1; Paladin and Witch max ceil(non-wolves/10); Hunter max = werewolves. Early start clamps to the caps, excess goes to the pool.
+- Paladins know each other (`me.mates`, `knowsEachOther`), share the charge stock and need all living paladins to save.
+- Retention: `Game::endedAt`; `Store::expired`, `peekLive`, `discard`, `lock()`. Ended games are deleted 2 days after the end, others after 7 days idle; expired games answer "Game not found". `info` sweeps about 1 in 20 calls, `create` sweeps.
+- Night action, hunter shot and vote open as popups (`role=dialog`); non-actors see "It is night…".
+### Changed
+- Ghost is no longer a setup card: a hidden `ghostSlot` trait is given to ceil(non-wolves/5) random non-evil players (topped up on late join); any role, including the Seer, rises as ghost when killed by wolves. The old `ghost` role stays as a legacy flag for old saves.
+- Night timer is mandatory: 30-90 s per step, default 60 (empty/0 gives 60). Discussion and vote timers stay optional. Old saves are normalised.
+- Witches act independently; heal targets only the wolf victim. A Hunter shooting a Hunter is held in `heldLog` (never in views) until the second shoots or passes; the second shoots blind.
+- Player board is no longer clickable; polling an ended game takes no lock. `Games::publicList` passes `cap`, `legacy`, `knowsEachOther`, `ghost`; `/how-to-play` updated.
+### Known limitation
+- A heal does not protect a poisoned bystander (differs from the requested rule); heal plus poison on the victim kills.
+### Removed
+- The 24 h inactivity deletion (replaced by the retention above). No list-games API exists; the home shows only locally stored sessions.
+
 ## 2026-10-11
 ### Added
 - SEO: `Wm\Seo` (`PAGES`, `head`, `robots`, `sitemap`); public `/how-to-play` page (rules and role lists generated from `src/games`); `/robots.txt` and `/sitemap.xml` generated per request (no domain stored in the repo); Open Graph image `public/img/og.png`; JSON-LD (WebSite, WebPage, FAQ on the home, breadcrumbs); `tests/SeoTest.php`; project skill `.claude/skills/seo/SKILL.md` and SEO duties in `CLAUDE.md`, the agents and `/feature`.

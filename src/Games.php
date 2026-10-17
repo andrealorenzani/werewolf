@@ -29,7 +29,9 @@ final class Games
                     'filler' => !empty($r['filler']),
                     'nightKind' => $r['night']['kind'] ?? null, 'nightStep' => $r['night']['step'] ?? 1,
                     'haunts' => isset($r['haunt']), 'onDeath' => $r['onDeath'] ?? null,
+                    'cap' => $r['cap'] ?? null, 'legacy' => !empty($r['legacy']), 'knowsEachOther' => !empty($r['knowsEachOther']),
                 ], $d['roles']),
+                'ghost' => isset($d['ghost']) ? ['per' => $d['ghost']['per'], 'desc' => $d['ghost']['desc']] : null,
             ];
         }
         return $out;

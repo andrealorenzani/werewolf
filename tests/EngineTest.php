@@ -9,8 +9,9 @@ const WW = ['werewolf', 'villager', 'villager', 'villager', 'seer', 'villager'];
 
 T::test('config rejects unbalanced or tiny games', function () {
     $def = Games::get('werewolf');
-    T::throws(fn() => Config::normalize($def, ['name' => 'x', 'roles' => ['villager' => 1, 'werewolf' => 1]]), '/At least 4/');
-    T::throws(fn() => Config::normalize($def, ['name' => 'x', 'roles' => ['villager' => 2, 'werewolf' => 2]]), '/outnumber/');
+    T::throws(fn() => Config::normalize($def, ['name' => 'x', 'roles' => ['villager' => 1, 'werewolf' => 1]]), '/At least 3 Villager/');
+    T::throws(fn() => Config::normalize(Games::get('mafia'), ['name' => 'x', 'roles' => ['citizen' => 1, 'mafioso' => 1]]), '/At least 4/');
+    T::throws(fn() => Config::normalize($def, ['name' => 'x', 'roles' => ['villager' => 3, 'werewolf' => 3]]), '/At most/');
     T::throws(fn() => Config::normalize($def, ['name' => 'x', 'roles' => ['villager' => 4]]), '/At least 1/');
     T::throws(fn() => Config::normalize($def, ['name' => 'x', 'roles' => ['villager' => 4, 'werewolf' => 1, 'seer' => 2]]), '/At most/');
     T::same(5, Config::normalize($def, ['name' => 'x', 'roles' => ['villager' => 4, 'werewolf' => 1]])['total']);
@@ -40,13 +41,13 @@ T::test('everyone ready ends discussion', function () {
 });
 
 T::test('lazy timers: tick() advances an expired phase', function () {
-    [$g, $ps, $clock] = startedGame('werewolf', WW, ['discussionSeconds' => 20, 'nightSeconds' => 20]);
+    [$g, $ps, $clock] = startedGame('werewolf', WW, ['discussionSeconds' => 20, 'nightSeconds' => 30]);
     $g->tick();
     T::same('discussion', $g->phase);
     $clock->ms += 21_000;
     $g->tick();
     T::same('night', $g->phase);
-    $clock->ms += 21_000;
+    $clock->ms += 31_000;
     $g->tick(); // step 1 expires -> step 2 (nobody) -> resolved
     T::same('discussion', $g->phase);
     T::same(1, $g->round);
@@ -56,7 +57,7 @@ T::test('lazy timers: tick() advances an expired phase', function () {
 T::test('werewolf kills; night ends when all actors acted', function () {
     [$g, $ps] = startedGame('werewolf', WW);
     toNight($g, $ps);
-    act($g, $ps[0], ['target' => $ps[1]->id]);
+    killAct($g, $ps[0], $ps[1]);
     T::same('night', $g->phase);
     act($g, $ps[4], ['target' => $ps[0]->id]); // seer inspects wolf
     T::same('discussion', $g->phase);
@@ -67,7 +68,7 @@ T::test('werewolf kills; night ends when all actors acted', function () {
 T::test('mafia: doctor protection saves the victim', function () {
     [$g, $ps] = startedGame('mafia', ['mafioso', 'citizen', 'citizen', 'citizen', 'detective', 'doctor']);
     toNight($g, $ps);
-    act($g, $ps[0], ['target' => $ps[1]->id]);
+    killAct($g, $ps[0], $ps[1]);
     act($g, $ps[4], ['target' => $ps[2]->id]);
     act($g, $ps[5], ['target' => $ps[1]->id]);
     T::true($ps[1]->alive);
@@ -78,14 +79,14 @@ T::test('night actions are validated', function () {
     [$g, $ps] = startedGame('werewolf', WW);
     toNight($g, $ps);
     T::throws(fn() => act($g, $ps[1], ['target' => $ps[2]->id]), '/cannot act/');
-    T::throws(fn() => act($g, $ps[0], ['target' => $ps[0]->id]), '/Invalid/');
+    T::throws(fn() => killAct($g, $ps[0], $ps[0]), '/Invalid/');
     T::throws(fn() => act($g, $ps[4], ['target' => $ps[4]->id]), '/Invalid/');
 });
 
 T::test('vote tie eliminates nobody', function () {
     [$g, $ps] = startedGame('werewolf', WW);
     toNight($g, $ps);
-    act($g, $ps[0], ['target' => $ps[1]->id]);
+    killAct($g, $ps[0], $ps[1]);
     act($g, $ps[4], ['target' => $ps[0]->id]);
     $g->command($ps[0]->id, ['t' => 'skip']);
     T::same('vote', $g->phase);
@@ -101,7 +102,7 @@ T::test('vote tie eliminates nobody', function () {
 T::test('villagers win by voting out the last werewolf', function () {
     [$g, $ps] = startedGame('werewolf', WW);
     toNight($g, $ps);
-    act($g, $ps[0], ['target' => $ps[1]->id]);
+    killAct($g, $ps[0], $ps[1]);
     act($g, $ps[4], ['target' => $ps[0]->id]);
     $g->command($ps[0]->id, ['t' => 'skip']);
     foreach ([2, 3, 4, 5] as $i) {
@@ -115,7 +116,7 @@ T::test('villagers win by voting out the last werewolf', function () {
 T::test('werewolves win when they reach parity', function () {
     [$g, $ps] = startedGame('werewolf', ['werewolf', 'villager', 'villager', 'villager', 'villager']);
     toNight($g, $ps);
-    act($g, $ps[0], ['target' => $ps[1]->id]);
+    killAct($g, $ps[0], $ps[1]);
     T::same('discussion', $g->phase); // 1 wolf vs 3
     $g->command($ps[0]->id, ['t' => 'skip']);
     foreach ([2, 3, 4] as $i) {
@@ -123,7 +124,7 @@ T::test('werewolves win when they reach parity', function () {
     }
     $g->command($ps[0]->id, ['t' => 'vote', 'target' => $ps[2]->id]);
     T::same('night', $g->phase); // ps[2] eliminated: 1 wolf vs 2
-    act($g, $ps[0], ['target' => $ps[3]->id]);
+    killAct($g, $ps[0], $ps[3]);
     T::same('ended', $g->phase);
     T::same('evil', $g->winner);
 });
@@ -131,7 +132,7 @@ T::test('werewolves win when they reach parity', function () {
 T::test('hunter shoots on death, then the game continues', function () {
     [$g, $ps] = startedGame('werewolf', ['werewolf', 'hunter', 'villager', 'villager', 'villager', 'villager']);
     toNight($g, $ps);
-    act($g, $ps[0], ['target' => $ps[1]->id]);
+    killAct($g, $ps[0], $ps[1]);
     T::same('hunter', $g->phase);
     T::throws(fn() => act($g, $ps[2], ['target' => $ps[0]->id]), '/not your turn/');
     act($g, $ps[1], ['target' => $ps[0]->id]);
@@ -142,7 +143,7 @@ T::test('hunter shoots on death, then the game continues', function () {
 T::test('hunter phase times out without a shot', function () {
     [$g, $ps, $clock] = startedGame('werewolf', ['werewolf', 'hunter', 'villager', 'villager', 'villager', 'villager']);
     toNight($g, $ps);
-    act($g, $ps[0], ['target' => $ps[1]->id]);
+    killAct($g, $ps[0], $ps[1]);
     $clock->ms += 60_000;
     $g->tick();
     T::same('discussion', $g->phase);
@@ -152,7 +153,7 @@ T::test('hunter phase times out without a shot', function () {
 T::test('witch heals the victim and can poison', function () {
     [$g, $ps] = startedGame('werewolf', ['werewolf', 'witch', 'villager', 'villager', 'villager', 'villager']);
     toNight($g, $ps);
-    act($g, $ps[0], ['target' => $ps[2]->id]);
+    killAct($g, $ps[0], $ps[2]);
     T::same('night', $g->phase);
     T::same('p2', $g->viewFor($ps[1]->id)['me']['action']['victim']);
     act($g, $ps[1], ['heal' => true, 'poison' => $ps[0]->id]);
@@ -164,7 +165,7 @@ T::test('witch heals the victim and can poison', function () {
 T::test('mafia: godfather appears innocent, escort blocks', function () {
     [$g, $ps] = startedGame('mafia', ['godfather', 'detective', 'escort', 'citizen', 'citizen', 'citizen']);
     toNight($g, $ps);
-    act($g, $ps[0], ['target' => $ps[3]->id]);
+    killAct($g, $ps[0], $ps[3]);
     act($g, $ps[1], ['target' => $ps[0]->id]);
     act($g, $ps[2], ['target' => $ps[0]->id]); // godfather blocked: no kill
     T::same('discussion', $g->phase);
@@ -176,7 +177,7 @@ T::test('mafia: godfather appears innocent, escort blocks', function () {
 T::test('mafia: vigilante shoots once', function () {
     [$g, $ps] = startedGame('mafia', ['mafioso', 'vigilante', 'citizen', 'citizen', 'citizen', 'citizen']);
     toNight($g, $ps);
-    act($g, $ps[0], ['target' => $ps[2]->id]);
+    killAct($g, $ps[0], $ps[2]);
     act($g, $ps[1], ['target' => $ps[0]->id]);
     T::same('ended', $g->phase); // mafioso dead, last mafia -> town wins
     T::same('good', $g->winner);
@@ -205,7 +206,7 @@ T::test('night chat is private to the evil team', function () {
 T::test('state survives a JSON round trip', function () {
     [$g, $ps] = startedGame('werewolf', WW);
     toNight($g, $ps);
-    act($g, $ps[0], ['target' => $ps[1]->id]);
+    killAct($g, $ps[0], $ps[1]);
     $copy = Game::fromArray(json_decode(json_encode($g->toArray()), true), ['rng' => fn() => 0.5]);
     T::same($g->viewFor($ps[4]->id)['me']['action'], $copy->viewFor($ps[4]->id)['me']['action']);
     act($copy, $copy->player($ps[4]->id), ['target' => $ps[0]->id]);
@@ -225,16 +226,16 @@ function lobby(string $type, array $roles, int $joined, array $settings = []): a
     return [$g, $ps, $clock];
 }
 
-T::test('timers default to off and set no deadline', function () {
+T::test('day timers default to off; the night timer is always on (60s default)', function () {
     $cfg = Config::normalize(Games::get('werewolf'), ['name' => 'x', 'roles' => ['villager' => 4, 'werewolf' => 1]]);
     T::same(0, $cfg['settings']['discussionSeconds']);
     T::same(0, $cfg['settings']['voteSeconds']);
-    T::same(0, $cfg['settings']['nightSeconds']);
-    [$g, $ps] = lobby('werewolf', ['villager' => 4, 'werewolf' => 1], 5);
+    T::same(60, $cfg['settings']['nightSeconds']);
+    [$g, $ps, $clock] = lobby('werewolf', ['villager' => 4, 'werewolf' => 1], 5);
     $g->start($ps[0]->id);
     T::same(null, $g->deadline);
     toNight($g, $ps);
-    T::same(null, $g->deadline);
+    T::same($clock->ms + 60_000, $g->deadline);
 });
 
 T::test('timer settings: 0 or empty is off, positive values are clamped', function () {
@@ -245,6 +246,37 @@ T::test('timer settings: 0 or empty is off, positive values are clamped', functi
     T::same(15, $n(['discussionSeconds' => 1])['discussionSeconds']);
     T::same(300, $n(['voteSeconds' => 9999])['voteSeconds']);
     T::same(60, $n(['nightSeconds' => 60])['nightSeconds']);
+});
+
+T::test('night timer: empty, 0 or invalid = 60, clamped to 30-90, no way to switch it off', function () {
+    $def = Games::get('werewolf');
+    $n = fn(mixed $v) => Config::normalize($def, ['name' => 'x', 'roles' => ['villager' => 4, 'werewolf' => 1], 'settings' => ['nightSeconds' => $v]])['settings']['nightSeconds'];
+    foreach ([null, '', 0, '0', false, -5, 'abc'] as $v) {
+        T::same(60, $n($v), var_export($v, true));
+    }
+    T::same(30, $n(1));
+    T::same(30, $n(29));
+    T::same(30, $n(30));
+    T::same(45, $n('45'));
+    T::same(90, $n(90));
+    T::same(90, $n(500));
+    $m = Config::normalize(Games::get('mafia'), ['name' => 'x', 'roles' => ['citizen' => 4, 'mafioso' => 1]]);
+    T::same(60, $m['settings']['nightSeconds']);
+});
+
+T::test('old save with the night timer off loads with 60s and arms the running night', function () {
+    [$g, $ps, $clock] = startedGame('werewolf', WW);
+    toNight($g, $ps);
+    $a = json_decode(json_encode($g->toArray()), true);
+    $a['settings']['nightSeconds'] = 0;
+    $a['deadline'] = null;
+    unset($a['endedAt'], $a['heldLog']);
+    $old = Game::fromArray($a, ['rng' => fn() => 0.5, 'clock' => $clock]);
+    T::same(60, $old->settings['nightSeconds']);
+    T::same([], $old->heldLog);
+    T::same(null, $old->endedAt);
+    $old->tick();
+    T::same($clock->ms + 60_000, $old->deadline);
 });
 
 T::test('role defaults pass validation', function () {
@@ -258,21 +290,21 @@ T::test('role defaults pass validation', function () {
     }
 });
 
-T::test('no timers: host can skip night steps and the hunter shot', function () {
-    [$g, $ps] = startedGame('werewolf', ['werewolf', 'witch', 'villager', 'villager', 'villager', 'villager'], ['discussionSeconds' => 0, 'nightSeconds' => 0, 'voteSeconds' => 0]);
+T::test('no day timers: host can skip night steps and the hunter shot', function () {
+    [$g, $ps, $clock] = startedGame('werewolf', ['werewolf', 'witch', 'villager', 'villager', 'villager', 'villager'], ['discussionSeconds' => 0, 'voteSeconds' => 0]);
     T::same(null, $g->deadline);
     toNight($g, $ps);
     T::throws(fn() => $g->command($ps[2]->id, ['t' => 'skip']), '/host/');
-    act($g, $ps[0], ['target' => $ps[2]->id]);
+    killAct($g, $ps[0], $ps[2]);
     T::same(2, $g->night['step']);
-    T::same(null, $g->deadline); // step 2 does not arm a timer
+    T::same($clock->ms + 45_000, $g->deadline); // every night step has its own timer
     $g->command($ps[0]->id, ['t' => 'skip']); // witch missing action = skip
     T::same('discussion', $g->phase);
     T::same(false, $ps[2]->alive);
 
     [$g, $ps] = startedGame('werewolf', ['werewolf', 'hunter', 'villager', 'villager', 'villager', 'villager'], ['discussionSeconds' => 0, 'voteSeconds' => 0]);
     toNight($g, $ps);
-    act($g, $ps[0], ['target' => $ps[1]->id]);
+    killAct($g, $ps[0], $ps[1]);
     T::same('hunter', $g->phase);
     T::same(null, $g->deadline);
     $g->command($ps[0]->id, ['t' => 'skip']);
@@ -295,7 +327,7 @@ T::test('settings: host only, lobby only, total >= joined, bumps version', funct
     T::same(7, $g->total);
     T::same(30, $g->settings['nightSeconds']);
     T::true($g->version > $v);
-    T::throws(fn() => $g->command($ps[0]->id, ['t' => 'settings', 'name' => 'x', 'roles' => ['villager' => 1, 'werewolf' => 1, 'seer' => 1]]), '/At least 4/');
+    T::throws(fn() => $g->command($ps[0]->id, ['t' => 'settings', 'name' => 'x', 'roles' => ['villager' => 1, 'werewolf' => 1, 'seer' => 1]]), '/At least 3 Villager/');
     $g->addPlayer(['name' => 'p3']);
     $g->addPlayer(['name' => 'p4']);
     T::throws(fn() => $g->command($ps[0]->id, ['t' => 'settings', 'name' => 'x', 'roles' => ['villager' => 3, 'werewolf' => 1]]), '/already joined/');
@@ -313,7 +345,7 @@ T::test('start needs 4 players and may leave seats open', function () {
 });
 
 T::test('composition: invariants for every n, fillers dropped first, dealt + pool = configured', function () {
-    foreach ([['werewolf', ['villager' => 7, 'werewolf' => 3, 'seer' => 1, 'paladin' => 1, 'ghost' => 2, 'hunter' => 1]],
+    foreach ([['werewolf', ['villager' => 7, 'werewolf' => 3, 'seer' => 1, 'paladin' => 1, 'hunter' => 1]],
         ['mafia', ['citizen' => 6, 'mafioso' => 1, 'godfather' => 1, 'detective' => 1, 'doctor' => 1, 'escort' => 1]]] as [$type, $roles]) {
         [$g] = lobby($type, $roles, 0);
         $def = Games::get($type);
@@ -392,11 +424,12 @@ T::test('late join: allowed on day 0, role from pool, rejected afterwards and wh
 });
 
 T::test('late joiner never tips the balance to evil; late evil is seen by evil only', function () {
-    // good (3) does not exceed evil+1 (1+1=2)? 3 > 2, so evil is allowed here
-    [$g, $ps] = lobby('werewolf', ['villager' => 3, 'werewolf' => 2], 4);
-    $g->start($ps[0]->id); // n=4: 1 wolf, 3 villagers; pool = 1 werewolf
+    // 4 villagers + 2 wolves configured; 5 join: composition keeps 1 wolf (2 wolves need 4+ other players)
+    [$g, $ps] = lobby('werewolf', ['villager' => 4, 'werewolf' => 2], 5);
+    $g->start($ps[0]->id);
     T::same(['werewolf'], $g->pool);
-    $a = $g->addPlayer(['name' => 'late']);
+    T::same(1, count(array_filter($g->players, fn($p) => $p->role === 'werewolf')));
+    $a = $g->addPlayer(['name' => 'late']); // 4 good > 1 evil + 1 and 2 wolves <= ceil(4/3)
     T::same('werewolf', $a->role);
     $wolf = array_values(array_filter($g->players, fn($p) => $p->role === 'werewolf' && $p->id !== $a->id))[0];
     $roleIn = fn(string $viewer, string $id) => array_values(array_filter($g->viewFor($viewer)['players'], fn($p) => $p['id'] === $id))[0]['role'] ?? null;
@@ -405,7 +438,7 @@ T::test('late joiner never tips the balance to evil; late evil is seen by evil o
     T::same(null, $roleIn($villager->id, $a->id));
 
     // guard: 2 good vs 1 evil at joining -> an evil draw is replaced by a filler
-    [$g, $ps] = lobby('werewolf', ['villager' => 3, 'werewolf' => 2], 4);
+    [$g, $ps] = lobby('werewolf', ['villager' => 4, 'werewolf' => 2], 5);
     $g->start($ps[0]->id);
     $g->players = array_slice($g->players, 0, 3);
     foreach ($g->players as $i => $p) {
@@ -415,6 +448,17 @@ T::test('late joiner never tips the balance to evil; late evil is seen by evil o
     $g->total = 9;
     $r = $g->addPlayer(['name' => 'z'])->role;
     T::same('villager', $r); // good=2, evil=1: 2 > 2 false -> filler
+});
+
+T::test('late joiner never exceeds a role cap: a capped card stays in the pool', function () {
+    [$g, $ps] = lobby('werewolf', ['villager' => 5, 'werewolf' => 1, 'witch' => 1], 6);
+    $g->start($ps[0]->id);
+    T::same(1, count(array_filter($g->players, fn($p) => $p->role === 'witch')));
+    $g->pool = ['witch'];
+    $g->total = 8;
+    $late = $g->addPlayer(['name' => 'late']); // 2 witches among 6 non-wolves: cap is ceil(6/10) = 1
+    T::same('villager', $late->role);
+    T::same(['witch'], $g->pool);
 });
 
 T::test('day 0 ends when all living press ready or host skips, with no timer', function () {
@@ -465,18 +509,19 @@ T::test('late joiner delays day 0 (timers off) until ready or host skip', functi
 });
 
 T::test('late-joined hunter shoots after dying', function () {
-    [$g, $ps] = lobby('werewolf', ['villager' => 5, 'werewolf' => 1, 'hunter' => 1], 6);
+    [$g, $ps] = lobby('werewolf', ['villager' => 5, 'werewolf' => 2, 'hunter' => 1], 6);
     $g->start($ps[0]->id);
     $g->pool = ['hunter'];
     $late = $g->addPlayer(['name' => 'late']);
     T::same('hunter', $late->role);
-    $wolf = array_values(array_filter($g->players, fn($p) => $p->role === 'werewolf'))[0];
+    $wolves = array_values(array_filter($g->players, fn($p) => $p->role === 'werewolf'));
+    T::same(2, count($wolves));
     $g->command($ps[0]->id, ['t' => 'skip']);
-    act($g, $wolf, ['target' => $late->id]);
+    killAct($g, $wolves, $late);
     T::same('hunter', $g->phase);
-    act($g, $late, ['target' => $wolf->id]);
-    T::same('ended', $g->phase);
-    T::same('good', $g->winner);
+    act($g, $late, ['target' => $wolves[0]->id]);
+    T::same('discussion', $g->phase);
+    T::same(false, $wolves[0]->alive);
 });
 
 T::test('settings: roles are required', function () {
@@ -562,11 +607,12 @@ T::test('settings command updates the story chat flags, visible in the view', fu
 T::test('werewolf role table: no doctor, ghost and paladin after the seer, witch acts in step 2', function () {
     $roles = Games::get('werewolf')['roles'];
     T::same(['villager', 'werewolf', 'seer', 'ghost', 'paladin', 'witch', 'hunter'], array_column($roles, 'id'));
+    T::same(['ghost'], array_column(array_filter($roles, fn($r) => !empty($r['legacy'])), 'id'));
     $by = array_column($roles, null, 'id');
     T::same('guard', $by['paladin']['night']['kind']);
     T::same(2, $by['paladin']['night']['step']);
     T::same(['countTeam' => 'evil'], $by['paladin']['night']['limit']);
-    T::same(1, $by['paladin']['max']);
+    T::same(3, $by['paladin']['max']);
     T::same(3, $by['ghost']['max']);
     T::same(0.5, $by['ghost']['haunt']['evilChance']);
     T::true(!isset($by['ghost']['night']));
@@ -575,6 +621,9 @@ T::test('werewolf role table: no doctor, ghost and paladin after the seer, witch
     T::same('protect', $mafia['doctor']['night']['kind']);
     $list = array_column(Games::publicList(), null, 'id')['werewolf']['roles'];
     T::same(true, array_column($list, null, 'id')['ghost']['haunts']);
+    T::same(true, array_column($list, null, 'id')['ghost']['legacy']);
+    T::same(true, array_column($list, null, 'id')['paladin']['knowsEachOther']);
+    T::same(['nonEvil' => 3], array_column($list, null, 'id')['werewolf']['cap']);
     T::same(2, array_column($list, null, 'id')['paladin']['nightStep']);
 });
 
@@ -665,7 +714,7 @@ function storyGame(array $settings): array
     $g->command($ps[1]->id, ['t' => 'chat', 'text' => 'day0 talk']);
     toNight($g, $ps);
     $g->command($ps[0]->id, ['t' => 'chat', 'text' => 'wolf plan']);
-    act($g, $ps[0], ['target' => null]);
+    $g->command($ps[0]->id, ['t' => 'skip']); // the wolves choose nobody
     $g->command($ps[2]->id, ['t' => 'chat', 'text' => 'secret dm', 'to' => $ps[3]->id]);
     $g->command($ps[2]->id, ['t' => 'chat', 'text' => 'day1 talk']);
     $g->command($ps[0]->id, ['t' => 'skip']);
@@ -756,7 +805,7 @@ T::test('paladin: acts in step 2, only when there is a victim and a charge', fun
     toNight($g, $ps);
     T::same([$ps[0]->id], $g->night['actors']);
     T::same(null, $g->viewFor($ps[1]->id)['me']['action']['done'] ?? null);
-    act($g, $ps[0], ['target' => $ps[2]->id]);
+    killAct($g, $ps[0], $ps[2]);
     T::same(2, $g->night['step']);
     T::same([$ps[1]->id], $g->night['actors']);
     $a = $g->viewFor($ps[1]->id)['me']['action'];
@@ -765,14 +814,14 @@ T::test('paladin: acts in step 2, only when there is a victim and a charge', fun
     T::same(1, $a['usesLeft']);
     T::same(true, $a['canSave']);
     T::true(!isset($a['targets']));
-    T::throws(fn() => act($g, $ps[0], ['target' => $ps[3]->id]), '/cannot act/');
+    T::throws(fn() => killAct($g, $ps[0], $ps[3]), '/cannot act/');
     T::throws(fn() => act($g, $ps[1], []), '/Invalid choice/');
     T::throws(fn() => act($g, $ps[1], ['save' => 'yes']), '/Invalid choice/');
     T::throws(fn() => act($g, $ps[1], ['target' => $ps[2]->id]), '/Invalid choice/');
 
     [$g, $ps] = startedGame('werewolf', PAL);
     toNight($g, $ps);
-    act($g, $ps[0], ['target' => null]); // no victim: the paladin has nothing to do
+    $g->command($ps[0]->id, ['t' => 'skip']); // no victim: the paladin has nothing to do
     T::same('discussion', $g->phase);
     T::same(1, $g->round);
 });
@@ -780,7 +829,7 @@ T::test('paladin: acts in step 2, only when there is a victim and a charge', fun
 T::test('paladin: saving prevents the death and spends the single charge', function () {
     [$g, $ps] = startedGame('werewolf', PAL);
     toNight($g, $ps);
-    act($g, $ps[0], ['target' => $ps[2]->id]);
+    killAct($g, $ps[0], $ps[2]);
     act($g, $ps[1], ['save' => true]);
     T::same('discussion', $g->phase);
     T::true($ps[2]->alive);
@@ -788,7 +837,7 @@ T::test('paladin: saving prevents the death and spends the single charge', funct
     T::matches('/shielded p2/', $ps[1]->notes[0]['text']);
     T::same(1, $ps[1]->state['guardUsed']);
     nextNight($g, $ps);
-    act($g, $ps[0], ['target' => $ps[2]->id]); // no charge left: no step 2
+    killAct($g, $ps[0], $ps[2]); // no charge left: no step 2
     T::same('discussion', $g->phase);
     T::same(false, $ps[2]->alive);
     T::true(!str_contains(json_encode($g->viewFor($ps[3]->id)), 'guardUsed'));
@@ -797,12 +846,12 @@ T::test('paladin: saving prevents the death and spends the single charge', funct
 T::test('paladin: skipping keeps the charge; host skip of the step too', function () {
     [$g, $ps] = startedGame('werewolf', PAL, ['nightSeconds' => 0]);
     toNight($g, $ps);
-    act($g, $ps[0], ['target' => $ps[2]->id]);
+    killAct($g, $ps[0], $ps[2]);
     act($g, $ps[1], ['save' => false]);
     T::same(false, $ps[2]->alive);
     T::same(null, $ps[1]->state['guardUsed'] ?? null);
     nextNight($g, $ps);
-    act($g, $ps[0], ['target' => $ps[3]->id]);
+    killAct($g, $ps[0], $ps[3]);
     T::same([$ps[1]->id], $g->night['actors']);
     $g->command($ps[0]->id, ['t' => 'skip']); // host skips the paladin
     T::same(false, $ps[3]->alive);
@@ -816,8 +865,7 @@ T::test('paladin: as many charges as werewolves in the game', function () {
         if ($n > 1) {
             nextNight($g, $ps);
         }
-        act($g, $ps[0], ['target' => $ps[3]->id]);
-        act($g, $ps[1], ['target' => $ps[3]->id]);
+        killAct($g, [$ps[0], $ps[1]], $ps[3]);
         if ($n <= 2) {
             T::same([$ps[2]->id], $g->night['actors'], "charge available in night $n");
             act($g, $ps[2], ['save' => true]);
@@ -833,7 +881,7 @@ T::test('paladin: as many charges as werewolves in the game', function () {
 T::test('paladin: does not stop poison; spends the charge even if the witch also heals', function () {
     [$g, $ps] = startedGame('werewolf', ['werewolf', 'paladin', 'witch', 'villager', 'villager', 'villager', 'villager']);
     toNight($g, $ps);
-    act($g, $ps[0], ['target' => $ps[3]->id]);
+    killAct($g, $ps[0], $ps[3]);
     T::same([$ps[1]->id, $ps[2]->id], $g->night['actors']);
     act($g, $ps[1], ['save' => true]);
     act($g, $ps[2], ['heal' => false, 'poison' => $ps[3]->id]);
@@ -842,7 +890,7 @@ T::test('paladin: does not stop poison; spends the charge even if the witch also
 
     [$g, $ps] = startedGame('werewolf', ['werewolf', 'paladin', 'witch', 'villager', 'villager', 'villager', 'villager']);
     toNight($g, $ps);
-    act($g, $ps[0], ['target' => $ps[3]->id]);
+    killAct($g, $ps[0], $ps[3]);
     act($g, $ps[1], ['save' => true]);
     act($g, $ps[2], ['heal' => true]);
     T::true($ps[3]->alive);
@@ -856,7 +904,7 @@ const GHOST = ['werewolf', 'ghost', 'villager', 'villager', 'villager', 'village
 T::test('ghost: killed by the wolves, becomes the step-3 actor and points at an evil player (good ghost)', function () {
     [$g, $ps] = startedGame('werewolf', GHOST); // rng 0.5 -> not < 0.5 -> good
     toNight($g, $ps);
-    act($g, $ps[0], ['target' => $ps[1]->id]);
+    killAct($g, $ps[0], $ps[1]);
     T::same('night', $g->phase);
     T::same(3, $g->night['step']);
     T::same([$ps[1]->id], $g->night['actors']);
@@ -868,7 +916,7 @@ T::test('ghost: killed by the wolves, becomes the step-3 actor and points at an 
     T::same(['evil' => false], $g->viewFor($ps[1]->id)['me']['ghost']);
     T::throws(fn() => act($g, $ps[1], ['target' => $ps[2]->id]), '/Invalid target/'); // good ghost: evil only
     T::throws(fn() => act($g, $ps[1], ['target' => $ps[1]->id]), '/Invalid target/');
-    T::throws(fn() => act($g, $ps[0], ['target' => $ps[2]->id]), '/cannot act/');
+    T::throws(fn() => killAct($g, $ps[0], $ps[2]), '/cannot act/');
     T::throws(fn() => act($g, $ps[2], ['target' => $ps[0]->id]), '/cannot act/');
     act($g, $ps[1], ['target' => $ps[0]->id]);
     T::same('discussion', $g->phase);
@@ -891,7 +939,7 @@ T::test('ghost: evil ghost (fixed rng) points at a good player only', function (
     [$g, $ps] = startedGame('werewolf', GHOST);
     setRng($g, 0.1);
     toNight($g, $ps);
-    act($g, $ps[0], ['target' => $ps[1]->id]);
+    killAct($g, $ps[0], $ps[1]);
     $a = $g->viewFor($ps[1]->id)['me']['action'];
     T::same(true, $a['evil']);
     T::same([$ps[2]->id, $ps[3]->id, $ps[4]->id, $ps[5]->id], $a['targets']);
@@ -907,7 +955,7 @@ T::test('ghost: the alignment roll uses the evilChance from the role data', func
         [$g, $ps] = startedGame('werewolf', GHOST);
         setRng($g, $r);
         toNight($g, $ps);
-        act($g, $ps[0], ['target' => $ps[1]->id]);
+        killAct($g, $ps[0], $ps[1]);
         T::same($evil, $g->viewFor($ps[1]->id)['me']['ghost']['evil']);
     }
 });
@@ -915,7 +963,7 @@ T::test('ghost: the alignment roll uses the evilChance from the role data', func
 T::test('ghost: a paladin save prevents the haunting', function () {
     [$g, $ps] = startedGame('werewolf', ['werewolf', 'ghost', 'paladin', 'villager', 'villager', 'villager']);
     toNight($g, $ps);
-    act($g, $ps[0], ['target' => $ps[1]->id]);
+    killAct($g, $ps[0], $ps[1]);
     act($g, $ps[2], ['save' => true]);
     T::same('discussion', $g->phase);
     T::true($ps[1]->alive);
@@ -928,7 +976,7 @@ T::test('ghost: poison, vote and the hunter shot do not create a ghost', functio
     // poison
     [$g, $ps] = startedGame('werewolf', ['werewolf', 'ghost', 'witch', 'villager', 'villager', 'villager']);
     toNight($g, $ps);
-    act($g, $ps[0], ['target' => $ps[3]->id]);
+    killAct($g, $ps[0], $ps[3]);
     act($g, $ps[2], ['heal' => true, 'poison' => $ps[1]->id]);
     T::same('discussion', $g->phase);
     T::same(false, $ps[1]->alive);
@@ -937,7 +985,7 @@ T::test('ghost: poison, vote and the hunter shot do not create a ghost', functio
     // vote
     [$g, $ps] = startedGame('werewolf', ['werewolf', 'ghost', 'villager', 'villager', 'villager', 'villager']);
     toNight($g, $ps);
-    act($g, $ps[0], ['target' => null]);
+    $g->command($ps[0]->id, ['t' => 'skip']);
     $g->command($ps[0]->id, ['t' => 'skip']);
     foreach ([0, 2, 3, 4, 5] as $i) {
         $g->command($ps[$i]->id, ['t' => 'vote', 'target' => $ps[1]->id]);
@@ -949,7 +997,7 @@ T::test('ghost: poison, vote and the hunter shot do not create a ghost', functio
     // hunter shot
     [$g, $ps] = startedGame('werewolf', ['werewolf', 'hunter', 'ghost', 'villager', 'villager', 'villager', 'villager']);
     toNight($g, $ps);
-    act($g, $ps[0], ['target' => $ps[1]->id]);
+    killAct($g, $ps[0], $ps[1]);
     T::same('hunter', $g->phase);
     act($g, $ps[1], ['target' => $ps[2]->id]);
     T::same(false, $ps[2]->alive);
@@ -960,7 +1008,7 @@ T::test('ghost: poison, vote and the hunter shot do not create a ghost', functio
 T::test('ghost: sees every role, others do not; no hidden data leaks', function () {
     [$g, $ps] = startedGame('werewolf', ['werewolf', 'ghost', 'seer', 'villager', 'villager', 'villager'], ['revealRoles' => false]);
     toNight($g, $ps);
-    act($g, $ps[0], ['target' => $ps[1]->id]);
+    killAct($g, $ps[0], $ps[1]);
     act($g, $ps[2], ['target' => $ps[3]->id]);
     T::same(3, $g->night['step']);
     $roles = fn(string $viewer) => array_column(array_filter($g->viewFor($viewer)['players'], fn($p) => isset($p['role'])), 'role', 'id');
@@ -990,7 +1038,7 @@ T::test('ghost: sees every role, others do not; no hidden data leaks', function 
 T::test('ghost: pointing reveals the Ghost role even when roles are not revealed', function () {
     [$g, $ps] = startedGame('werewolf', GHOST, ['revealRoles' => false]);
     toNight($g, $ps);
-    act($g, $ps[0], ['target' => $ps[1]->id]);
+    killAct($g, $ps[0], $ps[1]);
     act($g, $ps[1], ['target' => $ps[0]->id]);
     T::matches('/pointing a finger at them\. They were a Ghost\.$/', dawn($g));
 });
@@ -998,7 +1046,7 @@ T::test('ghost: pointing reveals the Ghost role even when roles are not revealed
 T::test('ghost: step 3 ends by timeout or host skip', function () {
     [$g, $ps, $clock] = startedGame('werewolf', GHOST);
     toNight($g, $ps);
-    act($g, $ps[0], ['target' => $ps[1]->id]);
+    killAct($g, $ps[0], $ps[1]);
     T::same('night', $g->phase);
     T::true($g->deadline !== null);
     $clock->ms += 46_000;
@@ -1007,10 +1055,10 @@ T::test('ghost: step 3 ends by timeout or host skip', function () {
     T::same(false, $ps[1]->alive);
     T::same('p1 was found dead. They were a Ghost.', dawn($g));
 
-    [$g, $ps] = startedGame('werewolf', GHOST, ['nightSeconds' => 0]);
+    [$g, $ps] = startedGame('werewolf', GHOST);
     toNight($g, $ps);
-    act($g, $ps[0], ['target' => $ps[1]->id]);
-    T::same(null, $g->deadline);
+    killAct($g, $ps[0], $ps[1]);
+    T::true($g->deadline !== null);
     $g->command($ps[0]->id, ['t' => 'skip']);
     T::same('discussion', $g->phase);
     T::same([], $g->marks);
@@ -1019,7 +1067,7 @@ T::test('ghost: step 3 ends by timeout or host skip', function () {
 T::test('ghost: marks and ghost state survive a JSON round trip; old saves default to no marks', function () {
     [$g, $ps] = startedGame('werewolf', GHOST);
     toNight($g, $ps);
-    act($g, $ps[0], ['target' => $ps[1]->id]);
+    killAct($g, $ps[0], $ps[1]);
     $mid = Game::fromArray(json_decode(json_encode($g->toArray()), true), ['rng' => fn() => 0.5, 'clock' => new Clock()]);
     T::same(['evil' => false], $mid->viewFor($ps[1]->id)['me']['ghost']);
     act($mid, $mid->player($ps[1]->id), ['target' => $ps[0]->id]);
@@ -1039,7 +1087,7 @@ T::test('ghost: with no valid target the ghost is not a step-3 actor', function 
     foreach ([2, 3, 4, 5] as $i) {
         $ps[$i]->alive = false;
     }
-    act($g, $ps[0], ['target' => $ps[1]->id]);
+    killAct($g, $ps[0], $ps[1]);
     T::same('ended', $g->phase);
     T::same(false, $ps[1]->alive);
     T::same([], $g->marks);
@@ -1056,8 +1104,743 @@ T::test('old werewolf save with a doctor loads and renders views', function () {
         T::same('night', $v['phase']);
     }
     T::same(null, $old->viewFor($ps[2]->id)['me']['action']);
-    act($old, $old->player($ps[0]->id), ['target' => $ps[1]->id]);
+    killAct($old, $old->player($ps[0]->id), $old->player($ps[1]->id));
     act($old, $old->player($ps[4]->id), ['target' => $ps[0]->id]);
     T::same('discussion', $old->phase);
     $old->viewFor($ps[2]->id);
+});
+
+// ---------- setup caps (Werewolf), composition clamp ----------
+function wwCfg(array $roles): array
+{
+    return Config::normalize(Games::get('werewolf'), ['name' => 'x', 'roles' => $roles]);
+}
+
+T::test('caps: villagers 3-20', function () {
+    T::throws(fn() => wwCfg(['villager' => 2, 'werewolf' => 1, 'seer' => 1]), '/At least 3 Villager/');
+    T::same(4, wwCfg(['villager' => 3, 'werewolf' => 1])['total']);
+    T::same(21, wwCfg(['villager' => 20, 'werewolf' => 1])['total']);
+    T::throws(fn() => wwCfg(['villager' => 21, 'werewolf' => 1]), '/At most 20 Villager/');
+});
+
+T::test('caps: werewolves are at most a third of the non-wolves (rounded up)', function () {
+    T::same(6, wwCfg(['villager' => 3, 'werewolf' => 1, 'seer' => 1, 'witch' => 1])['roleCounts']['villager'] + 3);
+    // 3 non-wolves -> 1 wolf, 4 -> 2, 6 -> 2, 7 -> 3, 9 -> 3, 10 -> 4
+    foreach ([[3, 1], [4, 2], [6, 2], [7, 3], [9, 3], [10, 4]] as [$nonWolves, $max]) {
+        T::same($max, wwCfg(['villager' => $nonWolves, 'werewolf' => $max])['roleCounts']['werewolf'], "ok at $nonWolves");
+        T::throws(fn() => wwCfg(['villager' => $nonWolves, 'werewolf' => $max + 1]), '/At most ' . $max . ' Werewolf/');
+    }
+    // non-wolves means every non-evil card, not only villagers
+    T::same(2, wwCfg(['villager' => 3, 'seer' => 1, 'werewolf' => 2])['roleCounts']['werewolf']);
+    T::throws(fn() => wwCfg(['villager' => 3, 'werewolf' => 0]), '/At least 1/');
+});
+
+T::test('caps: seer 1; paladin and witch one per 10 non-wolves; hunter at most the wolves', function () {
+    T::throws(fn() => wwCfg(['villager' => 5, 'werewolf' => 1, 'seer' => 2]), '/At most 1 Seer/');
+    // 10 non-wolves -> 1 paladin / witch; 11 -> 2
+    T::same(1, wwCfg(['villager' => 9, 'werewolf' => 1, 'paladin' => 1])['roleCounts']['paladin']);
+    T::throws(fn() => wwCfg(['villager' => 8, 'werewolf' => 1, 'paladin' => 2]), '/At most 1 Paladin/');
+    T::same(2, wwCfg(['villager' => 9, 'werewolf' => 1, 'paladin' => 2])['roleCounts']['paladin']);
+    T::throws(fn() => wwCfg(['villager' => 8, 'werewolf' => 1, 'witch' => 2]), '/At most 1 Witch/');
+    T::same(2, wwCfg(['villager' => 9, 'werewolf' => 1, 'witch' => 2])['roleCounts']['witch']);
+    T::same(1, wwCfg(['villager' => 5, 'werewolf' => 1, 'hunter' => 1])['roleCounts']['hunter']);
+    T::throws(fn() => wwCfg(['villager' => 5, 'werewolf' => 1, 'hunter' => 2]), '/At most 1 Hunter/');
+    T::same(2, wwCfg(['villager' => 5, 'werewolf' => 2, 'hunter' => 2])['roleCounts']['hunter']);
+    // lowering the wolves invalidates hunters: nothing is rewritten silently
+    T::throws(fn() => wwCfg(['villager' => 5, 'werewolf' => 1, 'hunter' => 2]), '/Hunter/');
+});
+
+T::test('caps: Config::capFor is data driven; Mafia has no caps', function () {
+    $def = Games::get('werewolf');
+    $by = array_column($def['roles'], null, 'id');
+    $counts = ['villager' => 7, 'werewolf' => 1, 'seer' => 1, 'witch' => 1];
+    T::same(3, Config::capFor($by['werewolf'], $counts, $def)); // 9 non-wolves
+    T::same(1, Config::capFor($by['witch'], $counts, $def));
+    T::same(1, Config::capFor($by['hunter'], $counts, $def)); // as many as wolves
+    T::same(5, Config::capFor($by['werewolf'], [], $def, 13)); // explicit non-evil count
+    T::same(20, Config::capFor($by['villager'], $counts, $def));
+    T::same(1, Config::capFor($by['seer'], $counts, $def));
+    $m = Games::get('mafia');
+    foreach ($m['roles'] as $r) {
+        T::true(!isset($r['cap']));
+    }
+    T::same(30, Config::capFor($m['roles'][0], [], $m));
+    T::same(7, Config::normalize($m, ['name' => 'x', 'roles' => ['citizen' => 4, 'mafioso' => 3]])['total']);
+});
+
+T::test('caps: the legacy Ghost card is ignored by the setup and hidden in the role list', function () {
+    $cfg = wwCfg(['villager' => 4, 'werewolf' => 1, 'ghost' => 3]);
+    T::same(5, $cfg['total']);
+    T::true(!array_key_exists('ghost', $cfg['roleCounts']));
+    $list = array_column(array_column(Games::publicList(), null, 'id')['werewolf']['roles'], null, 'id');
+    T::same(true, $list['ghost']['legacy']);
+    T::same(false, $list['seer']['legacy']);
+    T::same(5, array_column(Games::publicList(), null, 'id')['werewolf']['ghost']['per']);
+    T::same(null, array_column(Games::publicList(), null, 'id')['mafia']['ghost']);
+});
+
+T::test('composition clamps wolves and capped roles to the caps of the actual player count', function () {
+    [$g] = lobby('werewolf', ['villager' => 9, 'werewolf' => 3, 'seer' => 1, 'hunter' => 1, 'witch' => 1], 0);
+    $count = fn(array $cards, string $id) => count(array_filter($cards, fn($c) => $c === $id));
+    foreach (range(4, 15) as $n) {
+        $c = $g->composition($n);
+        $w = $count($c['dealt'], 'werewolf');
+        $nonWolves = $n - $w;
+        T::same($n, count($c['dealt']), "n=$n");
+        T::true($w >= 1 && $w <= (int)ceil($nonWolves / 3), "wolves $w for $n players");
+        T::true($count($c['dealt'], 'witch') <= (int)ceil($nonWolves / 10));
+        T::true($count($c['dealt'], 'hunter') <= $w);
+        T::same(15, count($c['dealt']) + count($c['pool']), 'nothing is lost');
+    }
+    // a setup outside the caps (e.g. from an old save) is clamped for the table that actually plays:
+    // 6 wolves configured; 8 players would get 3 by share but only 2 are allowed (5 non-wolves)
+    $g->roleCounts = ['villager' => 8, 'werewolf' => 6, 'hunter' => 3, 'witch' => 2, 'seer' => 1];
+    $g->total = 20;
+    $c = $g->composition(8);
+    $w = $count($c['dealt'], 'werewolf');
+    T::same(8, count($c['dealt']));
+    T::same(2, $w);
+    T::same(6, $w + $count($c['pool'], 'werewolf'));
+    T::true($count($c['dealt'], 'hunter') <= $w);
+    T::true($count($c['dealt'], 'witch') <= 1);
+    T::same(3, $count($c['dealt'], 'hunter') + $count($c['pool'], 'hunter'));
+    // 12 wolves configured at a 4-seat table: still a legal table with one wolf
+    $g->roleCounts = ['villager' => 3, 'werewolf' => 12, 'hunter' => 3];
+    $g->total = 18;
+    $c = $g->composition(4);
+    T::same(4, count($c['dealt']));
+    T::same(1, $count($c['dealt'], 'werewolf'));
+    T::true($count($c['dealt'], 'hunter') <= 1);
+});
+
+T::test('composition: 2 paladins configured, only one dealt to a small table; the second waits in the pool', function () {
+    [$g] = lobby('werewolf', ['villager' => 9, 'werewolf' => 1, 'paladin' => 2], 0);
+    $c = $g->composition(8);
+    T::same(1, count(array_filter($c['dealt'], fn($x) => $x === 'paladin')));
+    T::same(1, count(array_filter($c['pool'], fn($x) => $x === 'paladin')));
+    T::same(8, count($c['dealt']));
+    $c = $g->composition(12);
+    T::same(2, count(array_filter($c['dealt'], fn($x) => $x === 'paladin'))); // 11 non-wolves -> 2
+});
+
+// ---------- wolves: suggest + confirm ----------
+const WW2 = ['werewolf', 'werewolf', 'villager', 'villager', 'villager', 'villager', 'seer'];
+
+T::test('wolves: suggestions are visible to the team only; confirm needs agreement', function () {
+    [$g, $ps] = startedGame('werewolf', WW2);
+    toNight($g, $ps);
+    T::same([$ps[0]->id, $ps[1]->id, $ps[6]->id], $g->night['actors']);
+    act($g, $ps[0], ['target' => $ps[2]->id]);
+    $a0 = $g->viewFor($ps[0]->id)['me']['action'];
+    $a1 = $g->viewFor($ps[1]->id)['me']['action'];
+    T::same([$ps[0]->id => $ps[2]->id], (array)$a1['teamChoices']);
+    T::same(false, $a1['agreed']);
+    T::same(null, $a1['agreedTarget']);
+    T::same($ps[2]->id, $a0['mine']);
+    T::same(null, $a1['mine']);
+    T::throws(fn() => act($g, $ps[1], ['confirm' => true]), '/not agreed/');
+    T::throws(fn() => act($g, $ps[0], ['confirm' => true]), '/not agreed/');
+    act($g, $ps[1], ['target' => $ps[3]->id]); // disagreement
+    T::same(false, $g->viewFor($ps[0]->id)['me']['action']['agreed']);
+    T::throws(fn() => act($g, $ps[0], ['confirm' => true]), '/not agreed/');
+    act($g, $ps[1], ['target' => $ps[2]->id]);
+    $a0 = $g->viewFor($ps[0]->id)['me']['action'];
+    T::same(true, $a0['agreed']);
+    T::same($ps[2]->id, $a0['agreedTarget']);
+    T::same(false, $a0['done']);
+    act($g, $ps[0], ['confirm' => true]);
+    T::same([$ps[0]->id], $g->viewFor($ps[1]->id)['me']['action']['confirmed']);
+    T::same(true, $g->viewFor($ps[0]->id)['me']['action']['done']);
+    T::same('night', $g->phase);
+    T::same(1, $g->night['step']);
+    T::true($ps[2]->alive);
+    act($g, $ps[1], ['confirm' => true]);
+    T::same(1, $g->night['step']); // the seer has not acted yet
+    act($g, $ps[6], ['target' => $ps[0]->id]);
+    T::same('discussion', $g->phase);
+    T::same(false, $ps[2]->alive);
+    T::true($ps[3]->alive);
+});
+
+T::test('wolves: a changed suggestion clears every confirmation', function () {
+    [$g, $ps] = startedGame('werewolf', WW2);
+    toNight($g, $ps);
+    act($g, $ps[0], ['target' => $ps[2]->id]);
+    act($g, $ps[1], ['target' => $ps[2]->id]);
+    act($g, $ps[0], ['confirm' => true]);
+    T::same([$ps[0]->id], $g->viewFor($ps[0]->id)['me']['action']['confirmed']);
+    act($g, $ps[1], ['target' => $ps[2]->id]); // same target again: nothing changes
+    T::same([$ps[0]->id], $g->viewFor($ps[0]->id)['me']['action']['confirmed']);
+    act($g, $ps[1], ['target' => $ps[4]->id]);
+    $a = $g->viewFor($ps[0]->id)['me']['action'];
+    T::same([], $a['confirmed']);
+    T::same(false, $a['done']);
+    T::same(false, $a['agreed']);
+    T::true(!array_key_exists($ps[0]->id, $g->night['actions']));
+    act($g, $ps[0], ['target' => $ps[4]->id]); // the first wolf follows the second
+    act($g, $ps[0], ['confirm' => true]);
+    act($g, $ps[1], ['confirm' => true]);
+    act($g, $ps[6], ['target' => $ps[0]->id]);
+    T::same(false, $ps[4]->alive);
+    T::true($ps[2]->alive);
+});
+
+T::test('wolves: cannot pass, invalid targets and outsiders are refused', function () {
+    [$g, $ps] = startedGame('werewolf', WW2);
+    toNight($g, $ps);
+    T::throws(fn() => act($g, $ps[0], ['target' => null]), '/cannot pass/');
+    T::throws(fn() => act($g, $ps[0], []), '/cannot pass/');
+    T::throws(fn() => act($g, $ps[0], ['target' => $ps[1]->id]), '/Invalid target/'); // a fellow wolf
+    T::throws(fn() => act($g, $ps[0], ['target' => 'pnobody']), '/Invalid target/');
+    T::throws(fn() => act($g, $ps[2], ['target' => $ps[3]->id]), '/cannot act/');
+    T::throws(fn() => act($g, $ps[2], ['confirm' => true]), '/cannot act/');
+    $v = $g->viewFor($ps[2]->id);
+    T::same(null, $v['me']['action']);
+    $seer = $g->viewFor($ps[6]->id)['me']['action'];
+    T::true(!isset($seer['teamChoices']) && !isset($seer['agreed']));
+});
+
+T::test('wolves: suggestions never leak to non-wolves, dead wolves or the story', function () {
+    [$g, $ps] = startedGame('werewolf', WW2);
+    toNight($g, $ps);
+    act($g, $ps[0], ['target' => $ps[2]->id]);
+    foreach ([2, 3, 4, 5, 6] as $i) {
+        $json = json_encode($g->viewFor($ps[$i]->id));
+        T::true(!str_contains($json, 'teamChoices'), "p$i");
+        T::true(!str_contains($json, 'agreed'));
+        T::true(!str_contains($json, '"suggest"'));
+    }
+    T::true(str_contains(json_encode($g->viewFor($ps[1]->id)), 'teamChoices'));
+    killAct($g, [$ps[0], $ps[1]], $ps[2]);
+    act($g, $ps[6], ['target' => $ps[0]->id]);
+    $ps[1]->alive = false; // a dead wolf has no action at all
+    T::same(null, $g->viewFor($ps[1]->id)['me']['action']);
+    T::true(!str_contains(json_encode($g->viewFor($ps[3]->id)['log']), 'suggest'));
+});
+
+T::test('wolves: on timeout one of the distinct suggestions is picked at random; none = nobody dies', function () {
+    foreach ([[0.0, 2], [0.99, 3]] as [$r, $dead]) {
+        [$g, $ps, $clock] = startedGame('werewolf', WW2);
+        setRng($g, $r);
+        toNight($g, $ps);
+        act($g, $ps[0], ['target' => $ps[2]->id]);
+        act($g, $ps[1], ['target' => $ps[3]->id]);
+        act($g, $ps[0], ['target' => $ps[2]->id]);
+        $clock->ms += 61_000;
+        $g->tick();
+        T::same('discussion', $g->phase);
+        T::same(false, $ps[$dead]->alive, "rng $r");
+        T::same(6, count($g->alive()));
+    }
+    // agreement without confirmations, then the timer: the agreed player dies
+    [$g, $ps, $clock] = startedGame('werewolf', WW2);
+    toNight($g, $ps);
+    act($g, $ps[0], ['target' => $ps[4]->id]);
+    act($g, $ps[1], ['target' => $ps[4]->id]);
+    $clock->ms += 61_000;
+    $g->tick();
+    T::same(false, $ps[4]->alive);
+    // nobody suggested anything
+    [$g, $ps, $clock] = startedGame('werewolf', WW2);
+    toNight($g, $ps);
+    $clock->ms += 61_000;
+    $g->tick();
+    T::same('discussion', $g->phase);
+    T::same(7, count($g->alive()));
+    T::same('Nobody was killed during the night.', dawn($g));
+    // a single suggestion by one wolf counts
+    [$g, $ps] = startedGame('werewolf', WW2);
+    toNight($g, $ps);
+    act($g, $ps[1], ['target' => $ps[5]->id]);
+    $g->command($ps[0]->id, ['t' => 'skip']);
+    T::same(false, $ps[5]->alive);
+});
+
+T::test('wolves: mafia uses the same suggest + confirm, godfather included; blocked killers are ignored', function () {
+    [$g, $ps] = startedGame('mafia', ['mafioso', 'godfather', 'citizen', 'citizen', 'citizen', 'citizen', 'citizen', 'escort']);
+    toNight($g, $ps);
+    act($g, $ps[0], ['target' => $ps[2]->id]);
+    T::same([$ps[0]->id => $ps[2]->id], (array)$g->viewFor($ps[1]->id)['me']['action']['teamChoices']);
+    T::throws(fn() => act($g, $ps[1], ['target' => null]), '/cannot pass/');
+    T::throws(fn() => act($g, $ps[1], ['confirm' => true]), '/not agreed/');
+    act($g, $ps[1], ['target' => $ps[2]->id]);
+    act($g, $ps[0], ['confirm' => true]);
+    act($g, $ps[1], ['confirm' => true]);
+    T::same('night', $g->phase); // the escort still has to act
+    act($g, $ps[7], ['target' => $ps[1]->id]);
+    T::same(false, $ps[2]->alive); // the mafioso's choice still counts (only the godfather was blocked)
+
+    [$g, $ps] = startedGame('mafia', ['godfather', 'citizen', 'citizen', 'citizen', 'citizen', 'escort']);
+    toNight($g, $ps);
+    killAct($g, $ps[0], $ps[1]);
+    act($g, $ps[5], ['target' => $ps[0]->id]);
+    T::true($ps[1]->alive); // the only killer was blocked
+    T::matches('/kept you busy/', $ps[0]->notes[0]['text']);
+});
+
+T::test('wolves: an old save in the middle of a night (plain targets, no suggestions) still resolves', function () {
+    [$g, $ps, $clock] = startedGame('werewolf', WW);
+    toNight($g, $ps);
+    $a = json_decode(json_encode($g->toArray()), true);
+    unset($a['night']['suggest']);
+    $a['night']['actions'][$ps[0]->id] = ['target' => $ps[2]->id]; // the old format
+    $old = Game::fromArray($a, ['rng' => fn() => 0.5, 'clock' => $clock]);
+    $old->viewFor($ps[0]->id);
+    act($old, $old->player($ps[4]->id), ['target' => $ps[0]->id]);
+    $old->command($ps[0]->id, ['t' => 'skip']);
+    T::same(false, $old->player($ps[2]->id)->alive);
+});
+
+// ---------- ghost trait ----------
+function ghostHolders(Game $g): array
+{
+    return array_values(array_filter($g->players, fn($p) => !empty($p->state['ghostSlot'])));
+}
+
+T::test('ghost trait: ceil(non-wolves / 5) random good players get a secret slot at start, never a wolf', function () {
+    foreach ([[4, 1, 5, 1], [5, 1, 6, 1], [6, 1, 7, 2], [9, 2, 11, 2], [11, 1, 12, 3]] as [$villagers, $wolves, $n, $slots]) {
+        foreach ([0.0, 0.3, 0.7, 0.99] as $r) {
+            [$g, $ps] = lobby('werewolf', ['villager' => $villagers, 'werewolf' => $wolves], $n);
+            setRng($g, $r);
+            $total = $g->total;
+            $g->start($ps[0]->id);
+            $h = ghostHolders($g);
+            T::same($slots, count($h), "$n players rng $r");
+            foreach ($h as $p) {
+                T::same('villager', $p->role);
+                T::matches('/restless spirit/', $p->notes[0]['text']);
+            }
+            T::same($total, $g->total, 'slots do not count as cards');
+            T::same($n, count($g->players));
+            foreach ($g->players as $p) {
+                T::true(!str_contains(json_encode($g->viewFor($p->id)), 'ghostSlot'));
+                if (empty($p->state['ghostSlot'])) {
+                    T::same([], $p->notes);
+                }
+            }
+        }
+    }
+});
+
+T::test('ghost trait: only the holder is told; mafia has no ghosts', function () {
+    [$g, $ps] = lobby('werewolf', ['villager' => 6, 'werewolf' => 1], 7);
+    $g->start($ps[0]->id);
+    $holders = ghostHolders($g);
+    $other = array_values(array_filter($g->players, fn($p) => empty($p->state['ghostSlot'])))[0];
+    T::true(str_contains(json_encode($g->viewFor($holders[0]->id)['me']['notes']), 'restless spirit'));
+    T::true(!str_contains(json_encode($g->viewFor($other->id)), 'restless'));
+    T::true(!str_contains(json_encode($g->viewFor($holders[0]->id)['players']), 'restless'));
+    [$m, $mps] = lobby('mafia', ['citizen' => 5, 'mafioso' => 1], 6);
+    $m->start($mps[0]->id);
+    T::same([], ghostHolders($m));
+});
+
+T::test('ghost trait: late joiners top the number of slots up', function () {
+    [$g, $ps] = lobby('werewolf', ['villager' => 7, 'werewolf' => 1, 'seer' => 1], 5);
+    $g->start($ps[0]->id); // 4 non-wolves -> 1 slot
+    T::same(1, count(ghostHolders($g)));
+    $g->addPlayer(['name' => 'l1']); // 5 non-wolves -> still 1
+    T::same(1, count(ghostHolders($g)));
+    $g->addPlayer(['name' => 'l2']); // 6 non-wolves -> 2
+    T::same(2, count(ghostHolders($g)));
+    foreach (ghostHolders($g) as $p) {
+        T::true($g->viewFor($p->id)['me']['notes'] !== []);
+    }
+});
+
+/** A started game where $slot players carry the ghost trait. */
+function ghostGame(array $roles, array $slot, array $settings = []): array
+{
+    [$g, $ps, $clock] = startedGame('werewolf', $roles, $settings);
+    foreach ($slot as $i) {
+        $ps[$i]->state['ghostSlot'] = true;
+    }
+    return [$g, $ps, $clock];
+}
+
+T::test('ghost trait: a witch holder killed by the wolves, after acting, haunts in step 3 and the night ends', function () {
+    [$g, $ps] = ghostGame(['werewolf', 'witch', 'villager', 'villager', 'villager', 'villager'], [1]);
+    toNight($g, $ps);
+    killAct($g, $ps[0], $ps[1]); // the witch is the victim
+    act($g, $ps[1], ['poison' => $ps[2]->id]); // her step-2 action is spent when the ghost rises
+    T::same('night', $g->phase);
+    T::same(3, $g->night['step']);
+    T::same([$ps[1]->id], $g->night['actors']);
+    T::same('haunt', $g->viewFor($ps[1]->id)['me']['action']['kind']);
+    act($g, $ps[1], ['target' => $ps[0]->id]);
+    T::same('discussion', $g->phase);
+    T::same(false, $ps[1]->alive);
+    T::same(false, $ps[2]->alive); // the poison was applied before she died
+    T::same([[$ps[0]->id, $ps[1]->id]], $g->marks);
+});
+
+T::test('ghost trait: a holder killed by the wolves rises (any role, seer included) and points a finger', function () {
+    [$g, $ps] = ghostGame(WW, [4]); // the seer carries the trait
+    toNight($g, $ps);
+    act($g, $ps[4], ['target' => $ps[0]->id]); // the seer inspects the wolf first
+    killAct($g, $ps[0], $ps[4]);
+    T::same('night', $g->phase);
+    T::same(3, $g->night['step']);
+    T::same([$ps[4]->id], $g->night['actors']);
+    T::true($ps[4]->alive);
+    $a = $g->viewFor($ps[4]->id)['me']['action'];
+    T::same('haunt', $a['kind']);
+    T::same(false, $a['done']);
+    T::same(false, $a['evil']);
+    T::same([$ps[0]->id], $a['targets']);
+    T::same('Your ghost rises. Point a finger at one player.', $a['prompt']);
+    T::same(['evil' => false], $g->viewFor($ps[4]->id)['me']['ghost']);
+    T::matches('/IS a werewolf/', $ps[4]->notes[0]['text']); // the Seer's night result is kept
+    act($g, $ps[4], ['target' => $ps[0]->id]);
+    T::same('discussion', $g->phase);
+    T::same(false, $ps[4]->alive);
+    T::matches('/p4 was found dead\. Their ghost is now floating around p0/', dawn($g));
+    T::matches('/They were a Seer\.$/', dawn($g));
+    T::same([[$ps[0]->id, $ps[4]->id]], $g->marks);
+});
+
+T::test('ghost trait: the holder is not revealed when roles are hidden and nobody is pointed at', function () {
+    [$g, $ps] = ghostGame(WW, [4], ['revealRoles' => false]);
+    toNight($g, $ps);
+    act($g, $ps[4], ['target' => $ps[1]->id]);
+    killAct($g, $ps[0], $ps[4]);
+    act($g, $ps[4], ['target' => $ps[0]->id]);
+    T::same("p4 was found dead. Their ghost is now floating around p0, pointing a finger at them.", dawn($g));
+    [$g, $ps] = ghostGame(WW, [2], ['revealRoles' => false]);
+    toNight($g, $ps);
+    act($g, $ps[4], ['target' => $ps[1]->id]);
+    killAct($g, $ps[0], $ps[2]);
+    $g->command($ps[0]->id, ['t' => 'skip']); // the ghost points at nobody
+    T::same('p2 was found dead.', dawn($g));
+});
+
+T::test('ghost trait: the evil roll uses the ghost data (chance 0.5) and an evil ghost points at a good player', function () {
+    foreach ([[0.49, true], [0.5, false]] as [$r, $evil]) {
+        [$g, $ps] = ghostGame(WW, [1]);
+        setRng($g, $r);
+        toNight($g, $ps);
+        act($g, $ps[4], ['target' => $ps[2]->id]);
+        killAct($g, $ps[0], $ps[1]);
+        T::same($evil, $g->viewFor($ps[1]->id)['me']['ghost']['evil']);
+        if ($evil) {
+            T::throws(fn() => act($g, $ps[1], ['target' => $ps[0]->id]), '/Invalid target/');
+            T::true(in_array($ps[2]->id, $g->viewFor($ps[1]->id)['me']['action']['targets'], true));
+        }
+    }
+});
+
+T::test('ghost trait: only a wolf kill that goes through creates a ghost', function () {
+    // saved by a paladin
+    [$g, $ps] = ghostGame(['werewolf', 'paladin', 'villager', 'villager', 'villager', 'villager'], [2]);
+    toNight($g, $ps);
+    killAct($g, $ps[0], $ps[2]);
+    act($g, $ps[1], ['save' => true]);
+    T::true($ps[2]->alive);
+    T::same('discussion', $g->phase);
+    T::true(!isset($g->viewFor($ps[2]->id)['me']['ghost']));
+    // healed by the witch
+    [$g, $ps] = ghostGame(['werewolf', 'witch', 'villager', 'villager', 'villager', 'villager'], [2]);
+    toNight($g, $ps);
+    killAct($g, $ps[0], $ps[2]);
+    act($g, $ps[1], ['heal' => true]);
+    T::true($ps[2]->alive);
+    // poisoned: no ghost
+    [$g, $ps] = ghostGame(['werewolf', 'witch', 'villager', 'villager', 'villager', 'villager'], [3]);
+    toNight($g, $ps);
+    killAct($g, $ps[0], $ps[2]);
+    act($g, $ps[1], ['heal' => false, 'poison' => $ps[3]->id]);
+    T::same(false, $ps[3]->alive);
+    T::same('discussion', $g->phase);
+    T::true(empty($ps[3]->state['ghost']));
+    T::same([], $g->marks);
+    // voted out, shot by a hunter
+    [$g, $ps] = ghostGame(['werewolf', 'hunter', 'villager', 'villager', 'villager', 'villager'], [2]);
+    toNight($g, $ps);
+    killAct($g, $ps[0], $ps[1]);
+    act($g, $ps[1], ['target' => $ps[2]->id]);
+    T::same(false, $ps[2]->alive);
+    T::true(empty($ps[2]->state['ghost']));
+    T::same('discussion', $g->phase);
+});
+
+T::test('ghost trait: a legacy Ghost role in an old save still works, and the trait adds nothing for it', function () {
+    [$g, $ps] = startedGame('werewolf', GHOST);
+    toNight($g, $ps);
+    killAct($g, $ps[0], $ps[1]);
+    T::same(3, $g->night['step']);
+    T::same('Your ghost rises. Point a finger at one player.', $g->viewFor($ps[1]->id)['me']['action']['prompt']);
+    // a save written by the previous version: ghost role cards, no slots, timer off
+    $a = json_decode(json_encode($g->toArray()), true);
+    $a['settings']['nightSeconds'] = 0;
+    $old = Game::fromArray($a, ['rng' => fn() => 0.5, 'clock' => new Clock()]);
+    act($old, $old->player($ps[1]->id), ['target' => $ps[0]->id]);
+    T::matches('/They were a Ghost\.$/', dawn($old));
+});
+
+// ---------- paladins ----------
+const PAL2 = ['werewolf', 'werewolf', 'paladin', 'paladin', 'villager', 'villager', 'villager', 'villager', 'villager', 'villager', 'villager', 'villager', 'villager'];
+
+T::test('paladins: know each other, see each other\'s choices, nobody else does', function () {
+    [$g, $ps] = startedGame('werewolf', PAL2);
+    $v = $g->viewFor($ps[2]->id);
+    T::same([$ps[3]->id], $v['me']['mates']);
+    T::same([$ps[2]->id], $g->viewFor($ps[3]->id)['me']['mates']);
+    $roleIn = fn(array $v, string $id) => array_values(array_filter($v['players'], fn($p) => $p['id'] === $id))[0]['role'] ?? null;
+    T::same('paladin', $roleIn($v, $ps[3]->id));
+    T::same(null, $roleIn($v, $ps[4]->id));
+    T::same(null, $roleIn($g->viewFor($ps[4]->id), $ps[2]->id));
+    T::same(null, $roleIn($g->viewFor($ps[0]->id), $ps[2]->id)); // the wolves do not know them
+    foreach ([0, 1, 4] as $i) {
+        T::true(!array_key_exists('mates', $g->viewFor($ps[$i]->id)['me']), "p$i");
+    }
+    toNight($g, $ps);
+    killAct($g, [$ps[0], $ps[1]], $ps[5]);
+    T::same([$ps[2]->id, $ps[3]->id], $g->night['actors']);
+    T::same([], (array)$g->viewFor($ps[3]->id)['me']['action']['teamChoices']);
+    act($g, $ps[2], ['save' => true]);
+    T::same([$ps[2]->id => true], (array)$g->viewFor($ps[3]->id)['me']['action']['teamChoices']);
+    T::same([], (array)$g->viewFor($ps[2]->id)['me']['action']['teamChoices']);
+    foreach ([0, 4, 5] as $i) {
+        $json = json_encode($g->viewFor($ps[$i]->id));
+        T::true(!str_contains($json, 'teamChoices'), "p$i");
+    }
+});
+
+T::test('paladins: the shield applies only if every living paladin saves; one shared charge is spent', function () {
+    [$g, $ps] = startedGame('werewolf', PAL2);
+    toNight($g, $ps);
+    // night 1: both save -> shielded, one charge (2 wolves = 2 charges for everybody)
+    killAct($g, [$ps[0], $ps[1]], $ps[5]);
+    T::same(2, $g->viewFor($ps[2]->id)['me']['action']['usesLeft']);
+    act($g, $ps[2], ['save' => true]);
+    T::same('night', $g->phase);
+    act($g, $ps[3], ['save' => true]);
+    T::same('discussion', $g->phase);
+    T::true($ps[5]->alive);
+    T::same(1, ($ps[2]->state['guardUsed'] ?? 0) + ($ps[3]->state['guardUsed'] ?? 0));
+    T::matches('/You and your fellow paladins shielded p5/', $ps[2]->notes[0]['text']);
+    T::matches('/You and your fellow paladins shielded p5/', $ps[3]->notes[0]['text']);
+    // night 2: only one saves -> no shield, no charge spent
+    nextNight($g, $ps);
+    killAct($g, [$ps[0], $ps[1]], $ps[5]);
+    T::same(1, $g->viewFor($ps[3]->id)['me']['action']['usesLeft']); // the stock is shared
+    T::same(1, $g->viewFor($ps[2]->id)['me']['action']['usesLeft']);
+    act($g, $ps[2], ['save' => true]);
+    act($g, $ps[3], ['save' => false]);
+    T::same(false, $ps[5]->alive);
+    T::same(1, ($ps[2]->state['guardUsed'] ?? 0) + ($ps[3]->state['guardUsed'] ?? 0));
+    // night 3: both save again -> the last charge
+    nextNight($g, $ps);
+    killAct($g, [$ps[0], $ps[1]], $ps[6]);
+    act($g, $ps[2], ['save' => true]);
+    act($g, $ps[3], ['save' => true]);
+    T::true($ps[6]->alive);
+    T::same(2, ($ps[2]->state['guardUsed'] ?? 0) + ($ps[3]->state['guardUsed'] ?? 0));
+    // night 4: no charge left, no paladin step
+    nextNight($g, $ps);
+    killAct($g, [$ps[0], $ps[1]], $ps[6]);
+    T::same('discussion', $g->phase);
+    T::same(false, $ps[6]->alive);
+});
+
+T::test('paladins: a timeout with one paladin missing means no shield; a dead paladin does not count', function () {
+    [$g, $ps, $clock] = startedGame('werewolf', PAL2);
+    toNight($g, $ps);
+    killAct($g, [$ps[0], $ps[1]], $ps[5]);
+    act($g, $ps[2], ['save' => true]);
+    $clock->ms += 61_000;
+    $g->tick();
+    T::same('discussion', $g->phase);
+    T::same(false, $ps[5]->alive);
+    T::same(0, ($ps[2]->state['guardUsed'] ?? 0) + ($ps[3]->state['guardUsed'] ?? 0));
+
+    [$g, $ps] = startedGame('werewolf', PAL2);
+    $ps[3]->alive = false;
+    toNight($g, $ps);
+    killAct($g, [$ps[0], $ps[1]], $ps[5]);
+    T::same([$ps[2]->id], $g->night['actors']);
+    act($g, $ps[2], ['save' => true]);
+    T::true($ps[5]->alive);
+    T::same(1, $g->viewFor($ps[2]->id)['me']['action']['usesLeft'] ?? 1);
+    T::matches('/^You shielded p5/', $ps[2]->notes[0]['text']);
+});
+
+// ---------- witches ----------
+const WIT2 = ['werewolf', 'witch', 'witch', 'villager', 'villager', 'villager', 'villager', 'villager', 'villager', 'villager', 'villager', 'villager'];
+
+T::test('witches: each has her own potions and acts independently', function () {
+    [$g, $ps] = startedGame('werewolf', WIT2);
+    toNight($g, $ps);
+    killAct($g, $ps[0], $ps[3]);
+    T::same([$ps[1]->id, $ps[2]->id], $g->night['actors']);
+    foreach ([1, 2] as $i) {
+        $a = $g->viewFor($ps[$i]->id)['me']['action'];
+        T::same('p3', $a['victim']);
+        T::true($a['canHeal'] && $a['canPoison']);
+    }
+    act($g, $ps[1], ['heal' => true]);
+    T::same('night', $g->phase);
+    act($g, $ps[2], ['heal' => false, 'poison' => $ps[5]->id]);
+    T::true($ps[3]->alive);          // healed
+    T::same(false, $ps[5]->alive);   // poisoned by the other witch
+    T::true(!empty($ps[1]->state['healUsed']) && empty($ps[1]->state['poisonUsed']));
+    T::true(empty($ps[2]->state['healUsed']) && !empty($ps[2]->state['poisonUsed']));
+    // next night: the first witch still has her poison, the second her heal
+    nextNight($g, $ps);
+    killAct($g, $ps[0], $ps[4]);
+    $a1 = $g->viewFor($ps[1]->id)['me']['action'];
+    $a2 = $g->viewFor($ps[2]->id)['me']['action'];
+    T::same([false, true], [$a1['canHeal'], $a1['canPoison']]);
+    T::same([true, false], [$a2['canHeal'], $a2['canPoison']]);
+});
+
+T::test('witches: a cure and a poison on the wolf victim - the victim dies', function () {
+    [$g, $ps] = startedGame('werewolf', WIT2);
+    toNight($g, $ps);
+    killAct($g, $ps[0], $ps[3]);
+    act($g, $ps[1], ['heal' => true]);
+    act($g, $ps[2], ['poison' => $ps[3]->id]);
+    T::same(false, $ps[3]->alive);
+    T::same('discussion', $g->phase);
+    T::matches('/p3 was found dead/', dawn($g));
+});
+
+T::test('witches: a cure only protects the wolf victim - a poisoned bystander dies even if another witch heals', function () {
+    // The heal potion has no target: it always heals the werewolves' victim. A witch therefore cannot
+    // "cure" a player that the wolves did not attack, so a poison on a non-victim always kills.
+    [$g, $ps] = startedGame('werewolf', WIT2);
+    toNight($g, $ps);
+    killAct($g, $ps[0], $ps[3]);
+    act($g, $ps[1], ['heal' => true]);
+    act($g, $ps[2], ['poison' => $ps[4]->id]);
+    T::true($ps[3]->alive);
+    T::same(false, $ps[4]->alive);
+});
+
+T::test('witches: both may heal (both potions are spent), or do nothing and keep everything', function () {
+    [$g, $ps] = startedGame('werewolf', WIT2);
+    toNight($g, $ps);
+    killAct($g, $ps[0], $ps[3]);
+    act($g, $ps[1], ['heal' => true]);
+    act($g, $ps[2], ['heal' => true]);
+    T::true($ps[3]->alive);
+    T::true(!empty($ps[1]->state['healUsed']) && !empty($ps[2]->state['healUsed']));
+
+    [$g, $ps] = startedGame('werewolf', WIT2);
+    toNight($g, $ps);
+    killAct($g, $ps[0], $ps[3]);
+    act($g, $ps[1], ['heal' => false, 'poison' => null]); // explicitly nothing
+    $g->command($ps[0]->id, ['t' => 'skip']);            // the other witch never answers
+    T::same(false, $ps[3]->alive);
+    foreach ([1, 2] as $i) {
+        T::true(empty($ps[$i]->state['healUsed']) && empty($ps[$i]->state['poisonUsed']), "witch $i keeps both potions");
+    }
+    nextNight($g, $ps);
+    killAct($g, $ps[0], $ps[4]);
+    T::same([$ps[1]->id, $ps[2]->id], $g->night['actors']);
+});
+
+T::test('witches: invalid potion use is refused per witch', function () {
+    [$g, $ps] = startedGame('werewolf', WIT2);
+    toNight($g, $ps);
+    T::throws(fn() => act($g, $ps[1], ['heal' => true]), '/cannot act/'); // step 1: not her turn
+    killAct($g, $ps[0], $ps[3]);
+    T::throws(fn() => act($g, $ps[1], ['poison' => $ps[1]->id]), '/cannot poison/');
+    T::throws(fn() => act($g, $ps[1], ['poison' => 'pnobody']), '/cannot poison/');
+    act($g, $ps[1], ['heal' => true]);
+    act($g, $ps[2], ['heal' => false]);
+    nextNight($g, $ps);
+    killAct($g, $ps[0], $ps[4]);
+    T::throws(fn() => act($g, $ps[1], ['heal' => true]), '/cannot heal/'); // her potion is gone, the other witch's is not
+    act($g, $ps[2], ['heal' => true]);
+    T::true($ps[4]->alive);
+});
+
+// ---------- hunters shooting hunters ----------
+const HUN2 = ['werewolf', 'werewolf', 'hunter', 'hunter', 'villager', 'villager', 'villager', 'villager'];
+
+function logTexts(Game $g, string $viewer): array
+{
+    return array_map(fn($e) => $e['text'], $g->viewFor($viewer)['log']);
+}
+
+/** Night 1 of HUN2: the wolves kill hunter A (p2); A shoots hunter B (p3). */
+function hunterChain(): array
+{
+    [$g, $ps, $clock] = startedGame('werewolf', HUN2);
+    toNight($g, $ps);
+    killAct($g, [$ps[0], $ps[1]], $ps[2]);
+    act($g, $ps[2], ['target' => $ps[3]->id]);
+    return [$g, $ps, $clock];
+}
+
+const SHOT_AB = 'p2 fired a last shot and killed p3. They were a Hunter.';
+
+T::test('hunters: hunter A shoots hunter B - the line is withheld until B has shot', function () {
+    [$g, $ps] = hunterChain();
+    T::same('hunter', $g->phase);
+    T::same($ps[3]->id, $g->hunter); // B shoots now, without knowing who killed him
+    T::same(false, $ps[3]->alive);
+    T::same(1, count($g->heldLog));
+    foreach ($ps as $p) {
+        $json = json_encode($g->viewFor($p->id));
+        T::true(!str_contains($json, 'fired a last shot'), $p->name);
+        T::true(!str_contains($json, 'heldLog'));
+        T::true(!str_contains($json, 'p2 fired'));
+    }
+    $texts = logTexts($g, $ps[4]->id);
+    T::true(in_array('p3 is a Hunter! They take a last shot…', $texts, true));
+    T::true(!in_array(SHOT_AB, $texts, true));
+    act($g, $ps[3], ['target' => $ps[4]->id]);
+    T::same([], $g->heldLog);
+    T::true(in_array(SHOT_AB, logTexts($g, $ps[5]->id), true));
+});
+
+T::test('hunters: the chain keeps the order of the shots in the log', function () {
+    [$g, $ps] = hunterChain();
+    act($g, $ps[3], ['target' => $ps[4]->id]);
+    $texts = logTexts($g, $ps[5]->id);
+    $shots = array_values(array_filter($texts, fn($t) => str_contains($t, 'fired a last shot')));
+    T::same([SHOT_AB, 'p3 fired a last shot and killed p4. They were a Villager.'], $shots);
+    T::true(array_search($shots[0], $texts, true) < array_search($shots[1], $texts, true));
+    $announce = array_search('p3 is a Hunter! They take a last shot…', $texts, true);
+    T::true($announce < array_search($shots[0], $texts, true), 'the withheld line comes after B was announced');
+    T::same('discussion', $g->phase);
+});
+
+T::test('hunters: a hunter who does not shoot (skip) still flushes the withheld line; it survives a save', function () {
+    [$g, $ps, $clock] = hunterChain();
+    $copy = Game::fromArray(json_decode(json_encode($g->toArray()), true), ['rng' => fn() => 0.5, 'clock' => $clock]);
+    T::same($g->heldLog, $copy->heldLog);
+    T::true(!str_contains(json_encode($copy->viewFor($ps[4]->id)), 'fired a last shot'));
+    $copy->command($ps[0]->id, ['t' => 'skip']);
+    $texts = logTexts($copy, $ps[4]->id);
+    $i = array_search(SHOT_AB, $texts, true);
+    $j = array_search('p3 did not shoot anyone.', $texts, true);
+    T::true($i !== false && $j !== false && $i < $j);
+    T::same([], $copy->heldLog);
+});
+
+T::test('hunters: a hunter killing a non-hunter logs the shot at once; a held line is flushed before the game ends', function () {
+    [$g, $ps] = startedGame('werewolf', ['werewolf', 'hunter', 'villager', 'villager', 'villager', 'villager']);
+    toNight($g, $ps);
+    killAct($g, $ps[0], $ps[1]);
+    act($g, $ps[1], ['target' => $ps[2]->id]);
+    T::same([], $g->heldLog);
+    T::true(in_array('p1 fired a last shot and killed p2. They were a Villager.', logTexts($g, $ps[3]->id), true));
+    // A kills B, B kills the last wolf: the game ends with both shots in the story, in order
+    [$g, $ps] = startedGame('werewolf', HUN2);
+    $ps[1]->alive = false;
+    toNight($g, $ps);
+    killAct($g, $ps[0], $ps[2]);
+    act($g, $ps[2], ['target' => $ps[3]->id]);
+    act($g, $ps[3], ['target' => $ps[0]->id]);
+    T::same('ended', $g->phase);
+    T::same('good', $g->winner);
+    T::same([], $g->heldLog);
+    $texts = logTexts($g, $ps[4]->id);
+    $shots = array_values(array_filter($texts, fn($t) => str_contains($t, 'fired a last shot')));
+    T::same(2, count($shots));
+    T::same(SHOT_AB, $shots[0]);
+    T::matches('/^p3 fired a last shot and killed p0\./', $shots[1]);
 });

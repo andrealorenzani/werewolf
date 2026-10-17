@@ -31,7 +31,7 @@ $crumbs = [[
     <h2>Game flow</h2>
     <ol>
       <li><strong>Day 0:</strong> everyone talks; nobody has information yet and nobody is eliminated.</li>
-      <li><strong>Night:</strong> characters with powers act in secret; the evil team picks a victim.</li>
+      <li><strong>Night:</strong> characters with powers act in secret, within a 30 to 90 second timer per step; the evil team must agree on one victim: each member suggests a player and all confirm the same one.</li>
       <li><strong>Dawn:</strong> deaths are announced.</li>
       <li><strong>Discussion and vote:</strong> the living debate, then vote. The player with the most votes is eliminated; ties eliminate nobody.</li>
       <li>Night falls again, until one team wins.</li>
@@ -41,17 +41,20 @@ $crumbs = [[
     <p>The good team wins when no evil player is left alive. The evil team wins when living evil players are at least as many as living good players.</p>
 
     <h2>Setup</h2>
-    <p>Games need 4 to 30 players. The host chooses how many of each character to include, and can start as soon as four players have joined. Late players can still join while seats remain. Timers are optional.</p>
+    <p>Games need 4 to 30 players. The host chooses how many of each character to include, and can start as soon as four players have joined. Late players can still join while seats remain. The night timer is always on (60 seconds by default, 30 to 90 allowed); discussion and vote timers are optional. The number of werewolves, witches, paladins and hunters is limited by the table size, so the game stays balanced.</p>
 
 <?php foreach (Games::publicList() as $g): ?>
     <section id="<?= $h($g['id']) ?>">
       <h2><?= $h($g['icon']) ?> <?= $h($g['title']) ?> characters</h2>
       <p><?= $h($g['tagline']) ?> <strong><?= $h($g['teams']['good']['name']) ?>:</strong> <?= $h($g['teams']['good']['goal']) ?> <strong><?= $h($g['teams']['evil']['name']) ?>:</strong> <?= $h($g['teams']['evil']['goal']) ?></p>
       <ul>
-<?php foreach ($g['roles'] as $r): ?>
+<?php foreach ($g['roles'] as $r): if ($r['legacy']) { continue; } ?>
         <li><strong><?= $h($r['icon']) ?> <?= $h($r['name']) ?></strong> (<?= $r['team'] === 'evil' ? 'evil' : 'good' ?>): <?= $h($r['desc']) ?></li>
 <?php endforeach; ?>
       </ul>
+<?php if ($g['ghost']): ?>
+      <p><strong>👻 Ghosts:</strong> <?= $h($g['ghost']['desc']) ?></p>
+<?php endif; ?>
       <p><a href="?create=<?= $h($g['id']) ?>">Start a <?= $h($g['title']) ?> game</a></p>
     </section>
 <?php endforeach; ?>

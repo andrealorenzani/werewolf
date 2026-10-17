@@ -100,3 +100,14 @@ a.game-card { display: block; color: inherit; text-decoration: none; }
 .modal { position: fixed; inset: 0; background: rgba(0, 0, 0, .6); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 12px; }
 .modal-box { max-width: 360px; width: 100%; }
 .cam { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--radius); background: #000; }
+
+/* popup: night action, hunter shot, vote */
+.dialog-overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, .7); display: flex; align-items: center; justify-content: center; z-index: 40; padding: 12px; overflow-y: auto; }
+.dialog-overlay[hidden] { display: none; }
+.dialog-box { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; width: 100%; max-width: 480px; max-height: 94vh; overflow-y: auto; }
+.target-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; }
+.target { display: flex; gap: 8px; align-items: center; padding: 8px; text-align: left; border: 2px solid var(--line); background: var(--panel2); border-radius: 10px; min-width: 0; }
+.target .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.target.selected { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 20%, var(--panel2)); }
+.target .small { display: block; }
+.cap-note { color: var(--warn); }

@@ -22,7 +22,7 @@ final class Seo
         '/how-to-play' => [
             'title' => 'How to Play Werewolf & Mafia: Rules and Roles',
             'description' => 'Learn the rules of Werewolf and Mafia: day and night phases, voting, winning conditions and every role explained, from Seer to Godfather.',
-            'updated' => '2026-10-11',
+            'updated' => '2026-10-17',
         ],
     ];
 

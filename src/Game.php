@@ -47,6 +47,10 @@ final class Game
     /** Public ghost marks of the current day: [[targetId, ghostId], …]; cleared at nightfall. */
     public array $marks = [];
     public int $createdAt;
+    /** ms epoch when the game ended (retention: ended games are deleted after a while). Never in a view. */
+    public ?int $endedAt = null;
+    /** Log lines withheld until the matching hunter has shot (a hunter killed by another hunter). NEVER put in a view. */
+    public array $heldLog = [];
     public bool $dirty = false;   // needs saving
 
     private array $def;
@@ -68,6 +72,9 @@ final class Game
                 $this->$k = $v;
             }
         }
+        if (isset($this->settings)) {
+            $this->settings['nightSeconds'] = Config::nightSeconds($this->settings['nightSeconds'] ?? null); // old saves: timer was optional
+        }
     }
 
     /** @param array $config result of Config::normalize */
@@ -76,7 +83,7 @@ final class Game
         $g = new self([
             'id' => $id, 'type' => $type, 'name' => $config['name'], 'description' => $config['description'],
             'roleCounts' => $config['roleCounts'], 'settings' => $config['settings'], 'total' => $config['total'],
-            'createdAt' => (int)(microtime(true) * 1000),
+            'createdAt' => isset($deps['clock']) ? (int)($deps['clock'])() : (int)(microtime(true) * 1000),
         ], $deps);
         $g->dirty = true;
         return $g;
@@ -92,7 +99,7 @@ final class Game
         $out = [];
         foreach (['id', 'type', 'name', 'description', 'roleCounts', 'settings', 'total', 'hostId', 'phase', 'round',
             'deadline', 'seq', 'version', 'log', 'chat', 'winner', 'votes', 'night', 'hunter', 'pendingHunters',
-            'hunterNext', 'marks', 'createdAt', 'pool'] as $k) {
+            'hunterNext', 'marks', 'createdAt', 'pool', 'endedAt', 'heldLog'] as $k) {
             $out[$k] = $this->$k;
         }
         $out['players'] = array_map(static fn(Player $p) => $p->toArray(), $this->players);
@@ -171,6 +178,21 @@ final class Game
             'cs' => $this->chat ? end($this->chat)['id'] : 0];
     }
 
+    /** Like publicLog but withheld (heldLog) until flushHeld(). */
+    private function holdLog(string $text, string $type): void
+    {
+        $this->heldLog[] = ['round' => $this->round, 'phase' => $this->phase, 'type' => $type, 'text' => $text,
+            'cs' => $this->chat ? end($this->chat)['id'] : 0];
+    }
+
+    private function flushHeld(): void
+    {
+        if ($this->heldLog) {
+            array_push($this->log, ...$this->heldLog);
+            $this->heldLog = [];
+        }
+    }
+
     private function note(Player $p, string $text): void
     {
         $p->notes[] = ['round' => $this->round, 'text' => $text];
@@ -209,6 +231,9 @@ final class Game
             $this->publicLog("{$p->name} joined the game.", 'info');
         }
         $this->players[] = $p;
+        if ($this->phase !== 'lobby') {
+            $this->assignGhostSlots();
+        }
         $this->hostId ??= $p->id;
         $this->bump();
         return $p;
@@ -235,29 +260,48 @@ final class Game
         return null;
     }
 
-    /** Random card from the hidden pool; evil only if good would still strictly outnumber evil, else a filler. */
+    /**
+     * Random card from the hidden pool; evil only if good would still strictly outnumber evil, and no card that
+     * would exceed its setup cap (see Config::capFor); else a filler.
+     */
     private function drawLateRole(): string
     {
         $evil = 0;
+        $counts = [];
         foreach ($this->players as $q) {
             $evil += $this->teamOf($q) === 'evil' ? 1 : 0;
+            if ($q->role !== null) {
+                $counts[$q->role] = ($counts[$q->role] ?? 0) + 1;
+            }
         }
         $good = count($this->players) - $evil;
+        $allowed = function (string $id) use ($good, $evil, $counts): bool {
+            $r = $this->roleDef($id);
+            $isEvil = ($r['team'] ?? null) === 'evil';
+            if ($isEvil && $good <= $evil + 1) {
+                return false;
+            }
+            if (isset($r['cap'])) {
+                $counts[$id] = ($counts[$id] ?? 0) + 1;
+                return $counts[$id] <= Config::capFor($r, $counts, $this->def, $good + ($isEvil ? 0 : 1));
+            }
+            return true;
+        };
         $pool = array_values($this->pool);
         if ($pool) {
             $i = (int)floor($this->rand01() * count($pool));
-            if (($this->roleDef($pool[$i])['team'] ?? null) !== 'evil' || $good > $evil + 1) {
+            if ($allowed($pool[$i])) {
                 $role = $pool[$i];
                 array_splice($pool, $i, 1);
                 $this->pool = $pool;
                 return $role;
             }
-            // Evil card rejected: it stays in the pool (not consumed) for a later joiner.
-            // Take a filler (else any good card) from the pool instead
+            // Card rejected: it stays in the pool (not consumed) for a later joiner.
+            // Take a filler (else any allowed good card) from the pool instead
             foreach ([true, false] as $onlyFiller) {
                 foreach ($pool as $j => $id) {
                     $r = $this->roleDef($id);
-                    if ($r['team'] === 'good' && (!$onlyFiller || !empty($r['filler']))) {
+                    if ($r['team'] === 'good' && (!$onlyFiller || !empty($r['filler'])) && $allowed($id)) {
                         array_splice($pool, $j, 1);
                         $this->pool = $pool;
                         return $id;
@@ -267,12 +311,28 @@ final class Game
         }
         // Final fallback (empty pool): a free filler card, not taken from the pool, so the
         // total of this role may exceed the configured count.
-        foreach ($this->def['roles'] as $r) {
-            if (!empty($r['filler'])) {
-                return $r['id'];
-            }
+        return $this->freeFiller();
+    }
+
+    /**
+     * Ghost trait (games whose definition has a `ghost` entry): ceil(non-evil players / per) random non-evil
+     * players carry a secret ghost slot. Tops up when players join late. The trait is private to the holder.
+     */
+    private function assignGhostSlots(): void
+    {
+        $spec = $this->def['ghost'] ?? null;
+        if (!$spec) {
+            return;
         }
-        throw new GameError('No role card available.');
+        $cands = array_values(array_filter($this->players, fn(Player $p) => $p->role !== null && $this->teamOf($p) !== 'evil'
+            && !isset($this->roleOf($p)['haunt'])));
+        $want = (int)ceil(count($cands) / $spec['per']);
+        $have = count(array_filter($cands, static fn(Player $p) => !empty($p->state['ghostSlot'])));
+        $free = $this->shuffle(array_values(array_filter($cands, static fn(Player $p) => empty($p->state['ghostSlot']))));
+        foreach (array_slice($free, 0, max(0, $want - $have)) as $p) {
+            $p->state['ghostSlot'] = true;
+            $this->note($p, 'A restless spirit clings to you. If the werewolves kill you at night, your ghost will rise.');
+        }
     }
 
     public function playerByToken(string $token): ?Player
@@ -289,7 +349,9 @@ final class Game
     public function touch(Player $p): void
     {
         $p->lastSeen = $this->now();
-        $this->dirty = true;
+        if ($this->phase !== 'ended') {
+            $this->dirty = true; // an ended game is not rewritten just because someone is still looking at it
+        }
         if (!$p->connected) {
             $p->connected = true;
             $this->bump();
@@ -335,6 +397,7 @@ final class Game
         }
         $this->pool = $comp['pool'];
         $this->players = $this->shuffle($this->players); // seating order must not reveal roles
+        $this->assignGhostSlots();
         $this->round = 0;
         $this->publicLog('The game begins. Everyone has received a role card. Day 0: discuss!', 'phase');
         $this->enter('discussion');
@@ -343,7 +406,8 @@ final class Game
     /**
      * Pure: which cards to deal to $n players and which stay in the hidden pool. Evil count is the
      * configured share scaled to $n (at least 1, always fewer than good); roles listed later in the
-     * game definition are dropped first, and `filler` roles before other good roles.
+     * game definition are dropped first, and `filler` roles before other good roles. Capped roles
+     * (Config::capFor) are clamped to the caps for the actual $n; the excess goes to the pool.
      * @return array{dealt:string[],pool:string[]}
      */
     public function composition(int $n): array
@@ -363,10 +427,48 @@ final class Game
         }
         $e = (int)max(1, min(floor(($n - 1) / 2), round(count($evil) * $n / max(1, $this->total))));
         $e = min($e, count($evil));
-        $good = array_merge($special, $filler); // specials kept first, fillers dropped first
-        $dealt = array_merge(array_slice($evil, 0, $e), array_slice($good, 0, $n - $e));
-        $pool = array_merge(array_slice($evil, $e), array_slice($good, $n - $e));
-        return ['dealt' => $dealt, 'pool' => $pool];
+        while ($e > 1 && !$this->evilWithinCaps(array_slice($evil, 0, $e), $n - $e)) {
+            $e--;
+        }
+        $evilCounts = array_count_values(array_slice($evil, 0, $e));
+        $good = [];
+        $rest = [];
+        foreach (array_merge($special, $filler) as $id) { // specials kept first, fillers dropped first
+            $r = $this->roleDef($id);
+            $taken = array_count_values($good);
+            if (count($good) < $n - $e && (!isset($r['cap']) || ($taken[$id] ?? 0) < Config::capFor($r, $evilCounts + $taken, $this->def, $n - $e))) {
+                $good[] = $id;
+            } else {
+                $rest[] = $id;
+            }
+        }
+        while (count($good) < $n - $e) { // every card left is over its cap: a free filler
+            $good[] = $this->freeFiller();
+        }
+        return ['dealt' => array_merge(array_slice($evil, 0, $e), $good), 'pool' => array_merge(array_slice($evil, $e), $rest)];
+    }
+
+    /** Do these evil cards respect their caps when $nonEvil other players are dealt? */
+    private function evilWithinCaps(array $evilCards, int $nonEvil): bool
+    {
+        $counts = array_count_values($evilCards);
+        foreach ($counts as $id => $c) {
+            $r = $this->roleDef((string)$id);
+            if (isset($r['cap']) && $c > Config::capFor($r, $counts, $this->def, $nonEvil)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private function freeFiller(): string
+    {
+        foreach ($this->def['roles'] as $r) {
+            if (!empty($r['filler'])) {
+                return $r['id'];
+            }
+        }
+        throw new GameError('No role card available.');
     }
 
     /** Host edits the setup while still in the lobby. Same payload as `create`. */
@@ -440,7 +542,7 @@ final class Game
             $this->round++;
             $this->publicLog($this->text('nightFalls', $this->round), 'phase');
             $this->marks = [];
-            $this->night = ['step' => 1, 'actions' => [], 'victim' => null, 'actors' => [], 'dying' => [], 'ghosts' => []];
+            $this->night = ['step' => 1, 'actions' => [], 'suggest' => [], 'victim' => null, 'actors' => [], 'dying' => [], 'ghosts' => []];
             $this->night['actors'] = array_map(static fn(Player $p) => $p->id, $this->actorsForStep());
         } elseif ($phase === 'discussion' && $this->round > 0) {
             $this->publicLog($this->text('dayBreaks', $this->round), 'phase');
@@ -460,11 +562,19 @@ final class Game
     /** Apply expired deadlines and presence changes. Call at the start of every request. */
     public function tick(): void
     {
+        if ($this->phase === 'ended' && $this->endedAt === null) {
+            $this->endedAt = $this->now(); // old save: fix the retention clock once, later writes must not move it
+            $this->dirty = true;
+        }
+        if ($this->phase === 'night' && $this->deadline === null) {
+            $this->arm($this->settings['nightSeconds']); // old save from the time the night timer was optional
+            $this->dirty = true;
+        }
         $guard = 0;
         while ($this->deadline !== null && $this->now() >= $this->deadline && $guard++ < 3) {
             $this->advance();
         }
-        foreach ($this->players as $p) {
+        foreach ($this->phase === 'ended' ? [] : $this->players as $p) {
             if ($p->connected && $this->now() - $p->lastSeen > self::PRESENCE_MS) {
                 $p->connected = false;
                 $this->bump();
@@ -677,6 +787,7 @@ final class Game
             $this->enter('hunter');
             return;
         }
+        $this->flushHeld();
         if ($this->checkWin()) {
             return;
         }
@@ -688,8 +799,14 @@ final class Game
         $hunter = $this->player($this->hunter);
         $target = $targetId ? $this->player($targetId) : null;
         $this->hunter = null;
+        $this->flushHeld(); // a shot at this hunter, withheld so that he shot without knowing why he died
         if ($target) {
-            $this->publicLog($this->text('shot', $target->name, $hunter->name) . $this->revealSuffix($target), 'death');
+            $line = $this->text('shot', $target->name, $hunter->name) . $this->revealSuffix($target);
+            if (($this->roleOf($target)['onDeath'] ?? null) === 'shoot') {
+                $this->holdLog($line, 'death'); // the target is a hunter too: he shoots first, blind
+            } else {
+                $this->publicLog($line, 'death');
+            }
             $this->kill($target);
         } else {
             $this->publicLog("{$hunter->name} did not shoot anyone.", 'info');
@@ -711,7 +828,9 @@ final class Game
         if ($winner === null) {
             return false;
         }
+        $this->flushHeld();
         $this->winner = $winner;
+        $this->endedAt = $this->now();
         $this->phase = 'ended';
         $this->seq++;
         $this->deadline = null;
@@ -750,7 +869,10 @@ final class Game
         };
     }
 
-    /** Charges left for a limited power: team size (dead included) minus the charges already spent. */
+    /**
+     * Charges left for a limited power: team size (dead included) minus the charges already spent.
+     * The charges are shared by every player with the same role (all paladins draw from one stock).
+     */
     private function usesLeft(Player $p): int
     {
         $team = $this->roleOf($p)['night']['limit']['countTeam'] ?? null;
@@ -758,7 +880,39 @@ final class Game
             return PHP_INT_MAX;
         }
         $n = count(array_filter($this->players, fn(Player $q) => $this->teamOf($q) === $team));
-        return max(0, $n - (int)($p->state['guardUsed'] ?? 0));
+        $used = 0;
+        foreach ($this->players as $q) {
+            if ($q->role === $p->role) {
+                $used += (int)($q->state['guardUsed'] ?? 0);
+            }
+        }
+        return max(0, $n - $used);
+    }
+
+    /** Spec of the ghost this player would become: the role's own (legacy) or the secret ghost trait. */
+    private function hauntSpec(Player $p): ?array
+    {
+        return $this->roleOf($p)['haunt'] ?? (!empty($p->state['ghostSlot']) ? ($this->def['ghost'] ?? null) : null);
+    }
+
+    /** @return string[] ids of the killers (evil team) acting in the current step */
+    private function killers(): array
+    {
+        return array_values(array_filter($this->night['actors'] ?? [], fn(string $id) => ($q = $this->player($id)) && $this->nightKind($q) === 'kill'));
+    }
+
+    /** The victim every acting killer suggests, or null while they disagree (or some have not suggested). */
+    private function agreedTarget(): ?string
+    {
+        $t = null;
+        foreach ($this->killers() as $id) {
+            $s = $this->night['suggest'][$id] ?? null;
+            if ($s === null || ($t !== null && $s !== $t)) {
+                return null;
+            }
+            $t = $s;
+        }
+        return $t;
     }
 
     /** @return Player[] */
@@ -823,6 +977,10 @@ final class Game
                 throw new GameError('Invalid choice.');
             }
             $action = ['save' => $cmd['save']];
+        } elseif ($kind === 'kill') {
+            $this->killAction($p, $cmd);
+            $this->stepProgress();
+            return;
         } else {
             $target = $this->idOrNull($cmd['target'] ?? null);
             if ($target !== null && !$this->isValidTarget($p, $kind, $target)) {
@@ -831,6 +989,40 @@ final class Game
             $action = ['target' => $target];
         }
         $this->night['actions'][$p->id] = $action;
+        $this->stepProgress();
+    }
+
+    /**
+     * The killers suggest a victim (`target`; any change clears the confirmations) and, once all suggest the
+     * same player, each confirms (`confirm`). The step ends when every acting killer has confirmed. They cannot pass.
+     */
+    private function killAction(Player $p, array $cmd): void
+    {
+        if (!empty($cmd['confirm'])) {
+            if ($this->agreedTarget() === null) {
+                throw new GameError('Your team has not agreed on a victim yet.');
+            }
+            $this->night['actions'][$p->id] = ['target' => $this->night['suggest'][$p->id]];
+            return;
+        }
+        $target = $this->idOrNull($cmd['target'] ?? null);
+        if ($target === null) {
+            throw new GameError('Choose a victim: your team cannot pass.');
+        }
+        if (!$this->isValidTarget($p, 'kill', $target)) {
+            throw new GameError('Invalid target.');
+        }
+        if (($this->night['suggest'][$p->id] ?? null) !== $target) {
+            $this->night['suggest'][$p->id] = $target;
+            foreach ($this->killers() as $id) {
+                unset($this->night['actions'][$id]); // a changed suggestion voids every confirmation
+            }
+        }
+    }
+
+    /** After an action: end the step when every actor is done, else just publish the change. */
+    private function stepProgress(): void
+    {
         foreach ($this->night['actors'] as $id) {
             if (!array_key_exists($id, $this->night['actions'])) {
                 $this->bump();
@@ -854,9 +1046,7 @@ final class Game
             $this->night['actors'] = array_map(static fn(Player $p) => $p->id, $this->actorsForStep());
             if ($this->night['actors']) {
                 $this->seq++;
-                if ($this->settings['nightSeconds'] > 0) {
-                    $this->arm($this->settings['nightSeconds']);
-                }
+                $this->arm($this->settings['nightSeconds']);
                 $this->bump();
                 return;
             }
@@ -877,22 +1067,30 @@ final class Game
         return $blocked;
     }
 
+    /**
+     * The evil team's victim: the player their (unblocked) killers suggest. When everyone confirmed this is a
+     * single player; on a timeout or host skip a random one among the distinct suggestions; none = nobody dies.
+     */
     private function teamVictim(array $blocked): ?string
     {
-        $votes = [];
-        foreach ($this->night['actions'] as $id => $a) {
-            $p = $this->player((string)$id);
-            if (!$p || $this->nightKind($p) !== 'kill' || empty($a['target']) || isset($blocked[$id])) {
-                continue;
+        $suggest = $this->night['suggest'] ?? [];
+        foreach ($this->night['actions'] as $id => $a) { // a night saved before suggestions existed: the plain choices count
+            if (!empty($a['target'])) {
+                $suggest += [$id => $a['target']];
             }
-            $votes[$a['target']] = ($votes[$a['target']] ?? 0) + 1;
         }
-        if (!$votes) {
+        $picks = [];
+        foreach ($suggest as $id => $target) {
+            $p = $this->player((string)$id);
+            if ($p && $this->nightKind($p) === 'kill' && !isset($blocked[$id])) {
+                $picks[$target] = true;
+            }
+        }
+        $picks = array_map('strval', array_keys($picks));
+        if (!$picks) {
             return null;
         }
-        $top = max($votes);
-        $leaders = array_keys(array_filter($votes, static fn($n) => $n === $top));
-        return (string)$leaders[(int)floor($this->rand01() * count($leaders))];
+        return count($picks) === 1 ? $picks[0] : $picks[(int)floor($this->rand01() * count($picks))];
     }
 
     /** Apply every night action (once, before the ghosts act): saves, potions, shots, inspections. */
@@ -927,12 +1125,16 @@ final class Game
         $attacks = [];
         $healed = false;
         $guarded = false;
-        foreach ($of('guard') as $x) {
-            $p = $x['p'];
-            if (!empty($x['a']['save']) && $victim && $this->usesLeft($p) > 0) {
-                $p->state['guardUsed'] = (int)($p->state['guardUsed'] ?? 0) + 1;
-                $guarded = true;
-                $this->note($p, "You shielded {$this->player($victim)->name} from tonight's attack.");
+        // Paladins decide together: every living paladin must choose to save; then ONE shared charge is spent
+        $paladins = array_values(array_filter($this->alive(), fn(Player $q) => $this->nightKind($q) === 'guard'));
+        $saves = array_filter($of('guard'), static fn($x) => !empty($x['a']['save']));
+        if ($victim && $paladins && count($saves) === count($paladins) && $this->usesLeft($paladins[0]) > 0) {
+            $paladins[0]->state['guardUsed'] = (int)($paladins[0]->state['guardUsed'] ?? 0) + 1;
+            $guarded = true;
+            foreach ($paladins as $q) {
+                $this->note($q, count($paladins) > 1
+                    ? "You and your fellow paladins shielded {$this->player($victim)->name} from tonight's attack."
+                    : "You shielded {$this->player($victim)->name} from tonight's attack.");
             }
         }
         foreach ($of('witch') as $x) {
@@ -982,11 +1184,12 @@ final class Game
         $ghosts = [];
         if ($wolfKills && in_array($victim, $dying, true)) {
             $v = $this->player($victim);
-            $haunt = $this->roleOf($v)['haunt'] ?? null;
+            $haunt = $this->hauntSpec($v);
             if ($haunt && ($haunt['trigger'] ?? null) === 'evil') {
                 $evil = $this->rand01() < (float)($haunt['evilChance'] ?? 0.5);
                 $v->state['ghost'] = ['evil' => $evil];
                 $ghosts[] = $v->id;
+                unset($this->night['actions'][$v->id]); // the earlier action is spent; the ghost acts again in step 3
                 $good = $this->def['teams']['good']['name'];
                 $bad = $this->def['teams']['evil']['name'];
                 $this->note($v, $evil
@@ -1013,8 +1216,8 @@ final class Game
             $p = $this->player($id);
             $pick = in_array($id, $ghosts, true) ? ($actions[$id]['target'] ?? null) : null;
             if ($pick && ($t = $this->player($pick))) {
-                // the haunting line always names the Ghost role, even when roles are not revealed
-                $this->publicLog($this->text('ghostFound', $p->name, $t->name) . $this->revealSuffix($p, true), 'death');
+                // the haunting line names the card of a legacy Ghost even when roles are not revealed
+                $this->publicLog($this->text('ghostFound', $p->name, $t->name) . $this->revealSuffix($p, isset($this->roleOf($p)['haunt'])), 'death');
                 $this->marks[] = [$t->id, $p->id];
             } else {
                 $this->publicLog($this->text('foundDead', $p->name) . $this->revealSuffix($p), 'death');
@@ -1036,6 +1239,9 @@ final class Game
         if (!empty($viewer->state['ghost'])) {
             return true; // a ghost sees through everyone
         }
+        if (!empty($this->roleOf($viewer)['knowsEachOther']) && $viewer->role === $p->role) {
+            return true; // e.g. paladins know each other
+        }
         return $this->teamOf($viewer) === 'evil' && $this->teamOf($p) === 'evil';
     }
 
@@ -1049,7 +1255,7 @@ final class Game
         if ($kind === null) {
             return null;
         }
-        $n = $kind === 'haunt' ? $this->roleOf($p)['haunt'] : $this->roleOf($p)['night'];
+        $n = $kind === 'haunt' ? $this->hauntSpec($p) : $this->roleOf($p)['night'];
         $mine = $this->night['actions'][$p->id] ?? null;
         if (!in_array($p->id, $this->night['actors'], true)) {
             return ['kind' => $kind, 'prompt' => $n['prompt'], 'waiting' => true];
@@ -1067,19 +1273,36 @@ final class Game
             $out['victim'] = $v ? $this->player($v)->name : null;
             $out['usesLeft'] = $left;
             $out['canSave'] = $v !== null && $left > 0;
+            // fellow paladins see each other's choices (and nobody else does)
+            $mates = [];
+            foreach ($this->night['actions'] as $id => $a) {
+                if ($id !== $p->id && ($q = $this->player((string)$id)) && $q->role === $p->role) {
+                    $mates[$id] = !empty($a['save']);
+                }
+            }
+            $out['teamChoices'] = (object)$mates;
         } else {
             $out['targets'] = array_map(static fn($q) => $q->id, $this->validTargets($p, $kind));
             if ($kind === 'haunt') {
                 $out['evil'] = !empty($p->state['ghost']['evil']);
             }
             if ($kind === 'kill') {
+                // suggestions are private to the living team: playerId => suggested victim
                 $team = [];
-                foreach ($this->night['actions'] as $id => $a) {
-                    if ($this->teamOf($this->player((string)$id)) === 'evil') {
-                        $team[$id] = $a['target'];
+                $confirmed = [];
+                foreach ($this->killers() as $id) {
+                    if (isset($this->night['suggest'][$id])) {
+                        $team[$id] = $this->night['suggest'][$id];
+                    }
+                    if (isset($this->night['actions'][$id])) {
+                        $confirmed[] = $id;
                     }
                 }
                 $out['teamChoices'] = (object)$team;
+                $out['mine'] = $this->night['suggest'][$p->id] ?? null;
+                $out['agreed'] = $this->agreedTarget() !== null;
+                $out['agreedTarget'] = $this->agreedTarget();
+                $out['confirmed'] = $confirmed;
             }
         }
         return $out;
@@ -1165,6 +1388,10 @@ final class Game
                 : array_map(static fn(array $e) => array_diff_key($e, ['cs' => 1]), $this->log),
             'chat' => $chat,
         ];
+        if (!empty($role['knowsEachOther'])) {
+            $view['me']['mates'] = array_values(array_map(static fn(Player $q) => $q->id,
+                array_filter($this->players, static fn(Player $q) => $q->role === $me->role && $q->id !== $me->id)));
+        }
         if (!empty($me->state['ghost'])) {
             $view['me']['ghost'] = ['evil' => !empty($me->state['ghost']['evil'])]; // only the ghost knows its side
         }

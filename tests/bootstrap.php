@@ -71,7 +71,10 @@ function startedGame(string $type, array $roles, array $settings = []): array
 {
     $def = Games::get($type);
     $settings += ['discussionSeconds' => 120, 'voteSeconds' => 45, 'nightSeconds' => 45]; // timers are off by default
-    $counts = array_count_values($roles);
+    // legacy cards (the old Ghost role) are not selectable in setup: configure a villager, then force the role below
+    $legacy = array_column(array_filter($def['roles'], fn($r) => !empty($r['legacy'])), 'id');
+    $filler = array_column(array_filter($def['roles'], fn($r) => !empty($r['filler'])), 'id')[0];
+    $counts = array_count_values(array_map(fn($r) => in_array($r, $legacy, true) ? $filler : $r, $roles));
     $cfg = Config::normalize($def, ['name' => 'T', 'roles' => $counts, 'settings' => $settings]);
     $clock = new Clock();
     $g = Game::create('TESTAA', $type, $cfg, ['rng' => fn() => 0.5, 'clock' => $clock]);
@@ -83,6 +86,8 @@ function startedGame(string $type, array $roles, array $settings = []): array
     $g->players = $ps; // start() shuffles; force the order and roles
     foreach ($ps as $i => $p) {
         $p->role = $roles[$i];
+        $p->state = [];  // start() may have dealt secret ghost slots to the wrong people: tests set their own
+        $p->notes = [];
     }
     return [$g, $ps, $clock];
 }
@@ -95,4 +100,16 @@ function toNight(Game $g, array $ps): void
 function act(Game $g, Player $p, array $cmd): void
 {
     $g->command($p->id, ['t' => 'action'] + $cmd);
+}
+
+/** The evil team kills $target: every killer suggests the same player, then every killer confirms. */
+function killAct(Game $g, Player|array $killers, Player $target): void
+{
+    $killers = is_array($killers) ? $killers : [$killers];
+    foreach ($killers as $k) {
+        act($g, $k, ['target' => $target->id]);
+    }
+    foreach ($killers as $k) {
+        act($g, $k, ['confirm' => true]);
+    }
 }

@@ -44,3 +44,18 @@ T::test('seo: origin ignores the internal /public directory', function () {
     $_SERVER['SCRIPT_NAME'] = '/public/sitemap.php';
     T::same('http://example.test', Seo::origin());
 });
+
+T::test('seo: how-to-play lists current roles, the ghost trait and the night timer, but not the legacy Ghost card', function () {
+    $_SERVER['HTTP_HOST'] = 'example.test';
+    $_SERVER['SCRIPT_NAME'] = '/how-to-play.php';
+    ob_start();
+    require __DIR__ . '/../public/how-to-play.php';
+    $html = (string)ob_get_clean();
+    T::true(str_contains($html, 'Paladin'), 'roles are listed');
+    T::true(!str_contains($html, '<strong>👻 Ghost</strong>'), 'no Ghost card');
+    T::true(str_contains($html, '<strong>👻 Ghosts:</strong>'), 'ghost trait explained');
+    T::true(str_contains($html, '30 to 90 second timer') && str_contains($html, 'always on'), 'night timer');
+    T::true(!str_contains($html, 'Timers are optional'), 'old copy removed');
+    T::true(str_contains($html, 'Last updated ' . Seo::PAGES['/how-to-play']['updated']), 'updated date shown');
+    T::same('2026-10-17', Seo::PAGES['/how-to-play']['updated']);
+});

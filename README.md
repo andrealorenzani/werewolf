@@ -8,12 +8,12 @@ Browser-based, turn-based social-deduction games for 4–30 players, written in 
 The server is the game master: it deals the character cards, runs the night actions, counts the votes and announces the winner. Everybody plays from their own browser (phone-friendly).
 
 ## How it works
-1. Pick a game; set the name, description, your name, an optional avatar (kept in your browser's storage) and **how many of each character** (defaults: 5 villagers/citizens + 1 evil; timers are optional and off by default).
+1. Pick a game; set the name, description, your name, an optional avatar (kept in your browser's storage) and **how many of each character** (defaults: 5 villagers/citizens + 1 evil; discussion/vote timers are optional and off by default; the night timer is always on, 30-90 s, default 60).
 2. You get a unique game code, a link and a **QR code**. Other players scan it or type the code, choose a name/avatar and join.
 3. The host starts the game with at least 4 players (the cards are scaled to who is there); latecomers can still join until day 0 ends. Everyone taps their card to see their character. Anyone can edit their name and avatar (file or camera) at any time.
 4. Day 0 discussion → night (special characters act secretly) → dawn → discussion → vote → night … until one side wins.
 
-The host can delete a game for everyone from the home page; players can send private messages and the host may replay chats in the end-of-game story. Werewolf includes the Paladin and the Ghost.
+The host can delete a game for everyone from the home page; players can send private messages and the host may replay chats in the end-of-game story. Werewolf includes the Paladin and a hidden Ghost trait; the werewolves/mafia agree on a victim by suggesting and confirming.
 
 Full rules: [`docs/rules.md`](docs/rules.md).
 
@@ -38,7 +38,7 @@ Deployment is done by `scripts/deploy.sh [--all] [--dry-run]`: it requires a cle
 
 SEO: the home page and `/how-to-play` are indexable; `robots.txt` and `sitemap.xml` are generated from `Wm\Seo::PAGES` using the request's host (nothing to configure). Game rooms are `noindex`. The deploy only uploads, it never deletes: the old `public/index.html` (replaced by `index.php`) must be removed from the server manually.
 
-Games are deleted after 24 h of inactivity. Timers are evaluated when a player's browser polls, so a game with nobody connected simply waits.
+Ended games are deleted 2 days after they end, other games after 7 days of inactivity. Timers are evaluated when a player's browser polls, so a game with nobody connected simply waits.
 
 ## Project structure
 ```

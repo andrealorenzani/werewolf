@@ -15,6 +15,7 @@ namespace Wm;
  *   state  {id, token, v}              poll: {unchanged:true} or {state}
  *   avatars{id, token, ids[]}          {avatars:{playerId:dataURL}}
  *   cmd    {id, token, cmd}           run a game command -> {state}
+ *   (there is deliberately no way to list games; unfinished games expire after 7 days, ended ones 2 days after the end)
  *   delete {id, token}                 host only: remove the game for everyone -> {deleted:true}
  */
 final class Api
@@ -78,7 +79,10 @@ final class Api
 
     private function info(string $id): array
     {
-        $d = $this->store->peek($id) ?? throw new GameError('Game not found.');
+        if (random_int(1, 20) === 1) {
+            $this->store->sweep(); // housekeeping without a cron job
+        }
+        $d = $this->store->peekLive($id) ?? throw new GameError('Game not found.');
         return ['id' => $d['id'], 'type' => $d['type'], 'name' => $d['name'], 'description' => $d['description'],
             'phase' => $d['phase'], 'joinable' => Game::fromArray($d, $this->deps)->joinable(), 'joined' => count($d['players']), 'total' => $d['total']];
     }
@@ -95,7 +99,7 @@ final class Api
     {
         $now = $this->deps['clock'] ?? static fn() => (int)(microtime(true) * 1000);
         // Fast path, no lock: nothing changed, no deadline due, and our presence ping is fresh.
-        $raw = $this->store->peek($id);
+        $raw = $this->store->peekLive($id);
         if ($raw === null) {
             throw new GameError('Game not found.');
         }
@@ -109,7 +113,12 @@ final class Api
             throw new GameError('Session expired. Please join again.');
         }
         $t = $now();
-        if ($raw['version'] === $since && ($raw['deadline'] === null || $t < $raw['deadline']) && $t - $me['lastSeen'] < 5000) {
+        // Ended games need no presence ping (tick() skips it) and have no deadline. An old night save with no
+        // deadline must go through the locked path, where tick() arms the night timer.
+        $ended = $raw['phase'] === 'ended';
+        $stuckNight = $raw['phase'] === 'night' && $raw['deadline'] === null;
+        if ($raw['version'] === $since && !$stuckNight && ($raw['deadline'] === null || $t < $raw['deadline'])
+            && ($ended || $t - $me['lastSeen'] < 5000)) {
             return ['unchanged' => true, 'now' => $t];
         }
         return $this->store->mutate($id, function (Game $g) use ($token, $since) {
@@ -121,7 +130,7 @@ final class Api
 
     private function avatars(string $id, string $token, mixed $ids): array
     {
-        $d = $this->store->peek($id) ?? throw new GameError('Game not found.');
+        $d = $this->store->peekLive($id) ?? throw new GameError('Game not found.');
         $g = Game::fromArray($d, $this->deps);
         $g->playerByToken($token) ?? throw new GameError('Session expired. Please join again.');
         return ['avatars' => (object)$g->avatars(is_array($ids) ? array_slice($ids, 0, 40) : [])];

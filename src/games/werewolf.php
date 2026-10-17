@@ -28,26 +28,37 @@ return [
             'evil' => 'The werewolves have taken over the village!',
         ],
     ],
+    // Ghost is not a card: a share of the good players (one per `per`, rounded up) secretly carries a ghost
+    // trait. If the werewolves kill such a player (and nothing prevents it) the ghost rises. See docs/rules.md.
+    'ghost' => [
+        'per' => 5, 'trigger' => 'evil', 'evilChance' => 0.5,
+        'prompt' => 'Your ghost rises. Point a finger at one player.',
+        'desc' => 'Some villagers carry a restless spirit: roughly one in five of the non-werewolf players, picked at random at the start. If the werewolves kill such a player, their ghost stays and points a finger at one player. Death may turn the ghost evil: only the ghost knows its side.',
+    ],
+    // Role counts in setup: `max` is a hard limit, `cap` a limit that depends on the other counts:
+    //   ['nonEvil' => d]    at most ceil(non-evil cards / d)
+    //   ['count' => roleId] at most as many as that role
     'roles' => [
-        ['id' => 'villager', 'name' => 'Villager', 'team' => 'good', 'icon' => '🧑‍🌾', 'filler' => true, 'max' => 30, 'def' => 5,
+        ['id' => 'villager', 'name' => 'Villager', 'team' => 'good', 'icon' => '🧑‍🌾', 'filler' => true, 'min' => 3, 'max' => 20, 'def' => 5,
             'desc' => 'No special power. Use your voice and your vote to find the werewolves.'],
-        ['id' => 'werewolf', 'name' => 'Werewolf', 'team' => 'evil', 'icon' => '🐺', 'min' => 1, 'max' => 10, 'def' => 1,
-            'desc' => 'Each night, the werewolves agree on one villager to devour. By day, blend in.',
-            'night' => ['kind' => 'kill', 'prompt' => 'Choose a victim to devour.']],
+        ['id' => 'werewolf', 'name' => 'Werewolf', 'team' => 'evil', 'icon' => '🐺', 'min' => 1, 'max' => 10, 'def' => 1, 'cap' => ['nonEvil' => 3],
+            'desc' => 'Each night, the werewolves agree on one villager to devour: everyone suggests a victim and all confirm the same one. By day, blend in.',
+            'night' => ['kind' => 'kill', 'prompt' => 'Agree on a victim to devour.']],
         ['id' => 'seer', 'name' => 'Seer', 'team' => 'good', 'icon' => '🔮', 'max' => 1, 'def' => 0,
             'desc' => 'Each night, learn whether one player is a werewolf.',
             'night' => ['kind' => 'inspect', 'prompt' => 'Choose a player to investigate.']],
-        ['id' => 'ghost', 'name' => 'Ghost', 'team' => 'good', 'icon' => '👻', 'max' => 3, 'def' => 0,
+        // Legacy: old saved games may still contain Ghost cards. Hidden from setup, ignored by Config.
+        ['id' => 'ghost', 'name' => 'Ghost', 'team' => 'good', 'icon' => '👻', 'max' => 3, 'def' => 0, 'legacy' => true,
             'desc' => 'If the werewolves kill you at night, your ghost stays and points a finger at one player. Death may turn you evil: only you know your side.',
             'haunt' => ['trigger' => 'evil', 'evilChance' => 0.5, 'prompt' => 'Your ghost rises. Point a finger at one player.']],
-        ['id' => 'paladin', 'name' => 'Paladin', 'team' => 'good', 'icon' => '🛡️', 'max' => 1, 'def' => 0,
-            'desc' => "After the werewolves choose, you may shield their victim. You have as many charges as there are werewolves in the game, dead ones included.",
+        ['id' => 'paladin', 'name' => 'Paladin', 'team' => 'good', 'icon' => '🛡️', 'max' => 3, 'def' => 0, 'cap' => ['nonEvil' => 10], 'knowsEachOther' => true,
+            'desc' => "After the werewolves choose, you may shield their victim. All paladins share as many charges as there are werewolves in the game, dead ones included; they know each other and must all agree to shield.",
             'night' => ['kind' => 'guard', 'step' => 2, 'limit' => ['countTeam' => 'evil'], 'prompt' => 'The werewolves have chosen a victim. Shield them?']],
-        ['id' => 'witch', 'name' => 'Witch', 'team' => 'good', 'icon' => '🧪', 'max' => 1, 'def' => 0,
-            'desc' => "You own one healing potion and one poison for the whole game. You see the werewolves' victim.",
+        ['id' => 'witch', 'name' => 'Witch', 'team' => 'good', 'icon' => '🧪', 'max' => 3, 'def' => 0, 'cap' => ['nonEvil' => 10],
+            'desc' => "You own one healing potion and one poison for the whole game. You see the werewolves' victim. Several witches act independently.",
             'night' => ['kind' => 'witch', 'step' => 2, 'prompt' => 'Use a potion, or do nothing.']],
-        ['id' => 'hunter', 'name' => 'Hunter', 'team' => 'good', 'icon' => '🏹', 'max' => 1, 'def' => 0,
-            'desc' => 'When you die, for any reason, you immediately shoot one player of your choice.',
+        ['id' => 'hunter', 'name' => 'Hunter', 'team' => 'good', 'icon' => '🏹', 'max' => 10, 'def' => 0, 'cap' => ['count' => 'werewolf'],
+            'desc' => 'When you die, for any reason, you immediately shoot one player of your choice. Hunters do not know each other.',
             'onDeath' => 'shoot'],
     ],
 ];
