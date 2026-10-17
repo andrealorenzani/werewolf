@@ -3,6 +3,7 @@ import { getSession, forgetSession } from '../store.js';
 import { esc, setHtml, toast, $ } from '../util.js';
 import { avatarHtml, profileFields, bindProfile, closePhotoDialog } from '../avatar.js';
 import { buildSetupForm, settingsLines } from './setup.js';
+import { bindRulesLinks, closeRules } from '../rules.js';
 
 const PHASE_LABEL = { lobby: 'Lobby', discussion: 'Discussion', vote: 'Vote', night: 'Night', hunter: "Hunter's shot", ended: 'Game over' };
 
@@ -33,7 +34,7 @@ export async function openRoom(app, gameId, navigate) {
     <div class="room-head">
       <div><h1 data-title style="margin:0"></h1><span class="muted small" data-desc></span></div>
       <div class="row"><span class="badge" data-phase></span><span class="timer" data-timer></span>
-        <button data-edit-profile>My profile</button><button data-home>Home</button></div>
+        <a href="how-to-play" data-rules>Rules</a><button data-edit-profile>My profile</button><button data-home>Home</button></div>
     </div>
     <div data-banner></div>
     <div data-profile></div>
@@ -60,6 +61,8 @@ export async function openRoom(app, gameId, navigate) {
         <div data-m-foot class="row"></div>
       </div>
     </div>`;
+
+  bindRulesLinks($('.room-head', app));
 
   function applyState(next) {
     version = next.version;
@@ -159,7 +162,7 @@ export async function openRoom(app, gameId, navigate) {
   function renderSettingsList() {
     const el = $('[data-settings-list]', app);
     if (state.phase === 'lobby') return setHtml(el, '');
-    setHtml(el, `<div class="panel"><h3>Game settings</h3><ul class="settings-list small">${settingsLines(state.settings).map((l) => `<li>${esc(l)}</li>`).join('')}</ul></div>`);
+    setHtml(el, `<div class="panel"><h3>Game settings</h3><ul class="settings-list small">${settingsLines(state.settings, def.ghost ? state.ghosts : null).map((l) => `<li>${esc(l)}</li>`).join('')}</ul></div>`);
   }
 
   function renderRole() {
@@ -331,7 +334,8 @@ export async function openRoom(app, gameId, navigate) {
     const n = state.players.length;
     const canStart = n >= 4;
     const inLobby = state.phase === 'lobby';
-    const comp = def.roles.filter((r) => state.roleCounts[r.id]).map((r) => `${r.icon} ${state.roleCounts[r.id]} ${esc(r.name)}`).join(' · ');
+    const comp = def.roles.filter((r) => state.roleCounts[r.id]).map((r) => `${r.icon} ${state.roleCounts[r.id]} ${esc(r.name)}`)
+      .concat(def.ghost && state.ghosts > 0 ? [`${def.ghost.icon} ${state.ghosts} ${esc(def.ghost.name)} (trait)`] : []).join(' · ');
     setHtml(el, `<div class="panel stack">
       <div class="row">
         <img class="qr" src="${esc(qr)}" alt="QR code to join the game">
@@ -362,7 +366,7 @@ export async function openRoom(app, gameId, navigate) {
 
   function openSettings() {
     if (!state || settingsBox.firstChild) return;
-    const form = buildSetupForm(def, { name: state.name, description: state.description, roles: state.roleCounts, settings: state.settings });
+    const form = buildSetupForm(def, { name: state.name, description: state.description, roles: state.roleCounts, ghosts: state.ghosts ?? 0, settings: state.settings });
     const wrap = document.createElement('div');
     wrap.className = 'stack';
     wrap.appendChild(form.el);
@@ -499,7 +503,7 @@ export async function openRoom(app, gameId, navigate) {
     $('[data-m-timer]', app).textContent = text;
   }
   const tick = setInterval(() => { if (!app.isConnected) return stop(); updateTimer(); }, 500);
-  function stop() { closed = true; document.removeEventListener('keydown', onKey); closePhotoDialog(); clearInterval(tick); clearTimeout(pollTimer); }
+  function stop() { closed = true; document.removeEventListener('keydown', onKey); closePhotoDialog(); closeRules(); clearInterval(tick); clearTimeout(pollTimer); }
 
   // ---------- events ----------
   app.addEventListener('click', (e) => {

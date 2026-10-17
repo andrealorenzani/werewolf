@@ -9,6 +9,12 @@ async function call(action, body) {
 
 let defsPromise;
 export const gameDefs = () => (defsPromise ??= fetch('api.php?a=defs').then((r) => r.json()).then((d) => d.games));
+let rulesPromise;
+export const fetchRules = () => (rulesPromise ??= fetch('api.php?a=rules').then(async (r) => {
+  const d = await r.json();
+  if (!r.ok || typeof d.html !== 'string') throw new Error(d.error || 'Request failed.');
+  return d.html;
+}).catch((e) => { rulesPromise = undefined; throw e; }));
 export const createGame = (payload) => call('create', payload);
 export const getGame = (id) => fetch(`api.php?a=info&id=${encodeURIComponent(id)}`)
   .then(async (r) => { const d = await r.json(); if (!r.ok) throw new Error(d.error); return d; });

@@ -31,7 +31,7 @@ final class Games
                     'haunts' => isset($r['haunt']), 'onDeath' => $r['onDeath'] ?? null,
                     'cap' => $r['cap'] ?? null, 'legacy' => !empty($r['legacy']), 'knowsEachOther' => !empty($r['knowsEachOther']),
                 ], $d['roles']),
-                'ghost' => isset($d['ghost']) ? ['per' => $d['ghost']['per'], 'desc' => $d['ghost']['desc']] : null,
+                'ghost' => isset($d['ghost']) ? array_intersect_key($d['ghost'], array_flip(['name', 'icon', 'desc', 'min', 'max', 'def', 'cap'])) : null,
             ];
         }
         return $out;

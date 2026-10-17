@@ -32,6 +32,11 @@ final class T
         self::same(true, (bool)$v, $msg ?: 'expected truthy');
     }
 
+    public static function false(mixed $v, string $msg = ''): void
+    {
+        self::same(false, $v, $msg ?: 'expected false');
+    }
+
     public static function matches(string $pattern, string $s): void
     {
         self::$assertions++;
@@ -67,7 +72,7 @@ final class Clock
  * A started game with fixed roles: $roles lists one role id per player (p0, p1…).
  * @return array{0:Game,1:Player[],2:Clock}
  */
-function startedGame(string $type, array $roles, array $settings = []): array
+function startedGame(string $type, array $roles, array $settings = [], int $ghosts = 0): array
 {
     $def = Games::get($type);
     $settings += ['discussionSeconds' => 120, 'voteSeconds' => 45, 'nightSeconds' => 45]; // timers are off by default
@@ -75,7 +80,7 @@ function startedGame(string $type, array $roles, array $settings = []): array
     $legacy = array_column(array_filter($def['roles'], fn($r) => !empty($r['legacy'])), 'id');
     $filler = array_column(array_filter($def['roles'], fn($r) => !empty($r['filler'])), 'id')[0];
     $counts = array_count_values(array_map(fn($r) => in_array($r, $legacy, true) ? $filler : $r, $roles));
-    $cfg = Config::normalize($def, ['name' => 'T', 'roles' => $counts, 'settings' => $settings]);
+    $cfg = Config::normalize($def, ['name' => 'T', 'roles' => $counts, 'settings' => $settings, 'ghosts' => $ghosts]);
     $clock = new Clock();
     $g = Game::create('TESTAA', $type, $cfg, ['rng' => fn() => 0.5, 'clock' => $clock]);
     $ps = [];

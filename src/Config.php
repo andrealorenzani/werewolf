@@ -23,7 +23,7 @@ final class Config
     public const NIGHT_MAX = 90;
 
     /** Optional timers: missing / empty / 0 = no limit. */
-    private const RANGES = [
+    public const RANGES = [
         'discussionSeconds' => [15, 900],
         'voteSeconds' => [10, 300],
     ];
@@ -69,7 +69,7 @@ final class Config
         return mb_substr($s, 0, $max);
     }
 
-    /** @return array{name:string,description:string,roleCounts:array,settings:array,total:int} */
+    /** @return array{name:string,description:string,roleCounts:array,settings:array,total:int,ghosts:int} */
     public static function normalize(array $def, array $input): array
     {
         $name = self::clean($input['name'] ?? '', 40);
@@ -133,6 +133,19 @@ final class Config
             throw new GameError("{$def['teams']['good']['name']} must outnumber {$def['teams']['evil']['name']}.");
         }
 
+        $ghosts = 0;
+        if (isset($def['ghost'])) {
+            $raw = $input['ghosts'] ?? 0;
+            if (!is_numeric($raw) || (int)$raw != $raw || (int)$raw < 0) {
+                throw new GameError('Invalid count for Ghost.');
+            }
+            $ghosts = (int)$raw;
+            $cap = self::capFor($def['ghost'], $counts, $def);
+            if ($ghosts > $cap) {
+                throw new GameError("At most {$cap} Ghost allowed with this setup.");
+            }
+        }
+
         $settings = self::DEFAULT_SETTINGS;
         foreach (self::RANGES as $key => [$lo, $hi]) {
             $raw = $input['settings'][$key] ?? null;
@@ -154,7 +167,7 @@ final class Config
         }
 
         return ['name' => $name, 'description' => $description, 'roleCounts' => $counts,
-            'settings' => $settings, 'total' => $total];
+            'settings' => $settings, 'total' => $total, 'ghosts' => $ghosts];
     }
 
     /** @return array{name:string,avatar:?string} */

@@ -27,10 +27,11 @@ function capReason(def, role, cap) {
 }
 
 /** Human-readable lines for the game's settings (timers, reveal, chat in the story). */
-export function settingsLines(st) {
+export function settingsLines(st, ghosts = null) {
   const time = (s) => (s > 0 ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` : 'no limit');
   return [
     `Discussion: ${time(st.discussionSeconds)}`, `Vote: ${time(st.voteSeconds)}`, `Night: ${time(st.nightSeconds || NIGHT.def)} per step`,
+    ...(ghosts == null ? [] : [`Ghosts: ${ghosts}`]),
     `Reveal character on death: ${st.revealRoles === false ? 'no' : 'yes'}`,
     `Public chat in the final story: ${st.storyPublicChat ? 'yes' : 'no'}`,
     `Private chat in the final story: ${st.storyPrivateChat ? 'yes' : 'no'}`,
@@ -39,7 +40,7 @@ export function settingsLines(st) {
 
 /**
  * Game setup form shared by "create" and the host's lobby "Edit settings".
- * initial: {name, description, roles{id:n}, settings{...}}. Returns {el, values(), validate()};
+ * initial: {name, description, roles{id:n}, ghosts, settings{...}}. Returns {el, values(), validate()};
  * validate() returns a problem text ('' when fine) and refreshes the summary. onChange() is called
  * after every edit.
  */
@@ -47,6 +48,8 @@ export function buildSetupForm(def, initial, onChange = () => {}) {
   const roles = def.roles.filter((r) => !r.legacy); // legacy cards (the old Ghost) cannot be picked any more
   const counts = Object.fromEntries(roles.map((r) => [r.id, initial.roles?.[r.id] ?? r.def]));
   const st = initial.settings ?? {};
+  const gh = def.ghost; // secret trait, not a card: 0..number of werewolves, not counted as players
+  let ghosts = gh ? Math.max(0, initial.ghosts ?? gh.def ?? 0) : 0;
   const el = document.createElement('div');
   el.className = 'stack';
   el.innerHTML = `
@@ -66,6 +69,14 @@ export function buildSetupForm(def, initial, onChange = () => {}) {
           <div class="stepper"><button type="button" data-dec="${r.id}" aria-label="Fewer ${esc(r.name)}">−</button>
             <output data-count="${r.id}"></output><button type="button" data-inc="${r.id}" aria-label="More ${esc(r.name)}">+</button></div>
         </div>`).join('')}</div>
+      ${gh ? `<div class="role-row" data-ghost-row>
+          <span style="font-size:1.8rem">${gh.icon}</span>
+          <div class="info"><b class="ghost-name">${esc(gh.name)}</b><span class="muted small">${esc(gh.desc)}</span>
+            <span class="muted small">Not extra players: one of the non-${esc((def.roles.find((r) => r.id === gh.cap?.count)?.name ?? def.teams.evil.name).toLowerCase())} players secretly becomes a ghost.</span>
+            <span class="small cap-note" data-ghost-note></span></div>
+          <div class="stepper"><button type="button" data-ghost-dec aria-label="Fewer ${esc(gh.name)}">−</button>
+            <output data-ghost-count></output><button type="button" data-ghost-inc aria-label="More ${esc(gh.name)}">+</button></div>
+        </div>` : ''}
       <div class="muted small" data-check></div>
     </section>
     <section class="panel stack">
@@ -106,6 +117,14 @@ export function buildSetupForm(def, initial, onChange = () => {}) {
       if (counts[r.id] > cap) over.push(`${r.name}: at most ${cap} (${capReason(def, r, cap)})`);
       else if (counts[r.id] < (r.min ?? 0)) over.push(`At least ${r.min} ${r.name} needed`);
     }
+    if (gh) {
+      const gcap = capFor(def, gh, counts);
+      if (ghosts > gcap) ghosts = gcap; // werewolves were lowered
+      q('[data-ghost-count]').textContent = ghosts;
+      q('[data-ghost-inc]').disabled = ghosts >= gcap;
+      q('[data-ghost-dec]').disabled = ghosts <= (gh.min ?? 0);
+      q('[data-ghost-note]').textContent = ghosts >= gcap ? `Limit reached: ${gcap} (${capReason(def, gh, gcap)}).` : '';
+    }
     q('[data-total]').textContent = `${total} players`;
     const problem = over.length ? `${over[0]}.` : total < 4 ? 'At least 4 players are needed.' : evil < 1 ? `Add at least one ${def.teams.evil.name}.`
       : good <= evil ? `${def.teams.good.name} must outnumber ${def.teams.evil.name}.` : '';
@@ -114,6 +133,13 @@ export function buildSetupForm(def, initial, onChange = () => {}) {
   }
 
   el.addEventListener('click', (e) => {
+    const gb = gh && e.target.closest('[data-ghost-inc],[data-ghost-dec]');
+    if (gb) {
+      ghosts = gb.hasAttribute('data-ghost-inc') ? Math.min(capFor(def, gh, counts), ghosts + 1) : Math.max(gh.min ?? 0, ghosts - 1);
+      validate();
+      onChange();
+      return;
+    }
     const b = e.target.closest('[data-inc],[data-dec]');
     if (!b) return;
     const inc = b.dataset.inc, dec = b.dataset.dec;
@@ -130,7 +156,7 @@ export function buildSetupForm(def, initial, onChange = () => {}) {
   el.addEventListener('input', () => onChange());
 
   const values = () => ({
-    name: q('[data-name]').value, description: q('[data-desc]').value, roles: { ...counts },
+    name: q('[data-name]').value, description: q('[data-desc]').value, roles: { ...counts }, ghosts,
     settings: {
       ...Object.fromEntries(TIMERS.map((t) => [t.key, q(`[data-limit="${t.key}"]`).checked ? q(`[data-secs="${t.key}"]`).value : 0])),
       [NIGHT.key]: q(`[data-secs="${NIGHT.key}"]`).value || NIGHT.def,

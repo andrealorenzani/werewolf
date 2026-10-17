@@ -28,12 +28,14 @@ return [
             'evil' => 'The werewolves have taken over the village!',
         ],
     ],
-    // Ghost is not a card: a share of the good players (one per `per`, rounded up) secretly carries a ghost
-    // trait. If the werewolves kill such a player (and nothing prevents it) the ghost rises. See docs/rules.md.
+    // Ghost is not a card and not an extra player: the host sets how many (0..number of werewolves) and that many
+    // random non-werewolf players secretly carry a ghost trait. If such a player dies at NIGHT (werewolves or poison,
+    // and nothing prevents it) the ghost rises. Votes and hunter shots never raise one. See docs/rules.md.
     'ghost' => [
-        'per' => 5, 'trigger' => 'evil', 'evilChance' => 0.5,
+        'name' => 'Ghost', 'icon' => '👻', 'min' => 0, 'max' => 10, 'def' => 0, 'cap' => ['count' => 'werewolf'],
+        'trigger' => 'death', 'evilChance' => 0.5,
         'prompt' => 'Your ghost rises. Point a finger at one player.',
-        'desc' => 'Some villagers carry a restless spirit: roughly one in five of the non-werewolf players, picked at random at the start. If the werewolves kill such a player, their ghost stays and points a finger at one player. Death may turn the ghost evil: only the ghost knows its side.',
+        'desc' => 'Some non-werewolf players carry a restless spirit, picked at random at the start; the host chooses how many (at most one per werewolf). If such a player dies during the night, their ghost stays and points a finger at one player. Death may turn the ghost evil: only the ghost knows its side.',
     ],
     // Role counts in setup: `max` is a hard limit, `cap` a limit that depends on the other counts:
     //   ['nonEvil' => d]    at most ceil(non-evil cards / d)

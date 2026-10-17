@@ -1,6 +1,7 @@
 import { gameDefs, getGame, deleteGame } from '../api.js';
 import { getSessions, getSession, forgetSession } from '../store.js';
 import { esc, toast } from '../util.js';
+import { bindRulesLinks } from '../rules.js';
 
 export async function renderHome(app, navigate) {
   const defs = await gameDefs();
@@ -8,7 +9,8 @@ export async function renderHome(app, navigate) {
   app.innerHTML = `
     <div class="stack">
       <header><h1>🌙 Werewolf &amp; Mafia</h1>
-        <p class="muted">Social deduction games for your phone or browser. Pick a game, share the code, and play.</p></header>
+        <p class="muted">Social deduction games for your phone or browser. Pick a game, share the code, and play.</p>
+        <p><a href="how-to-play" data-rules>Rules and characters</a></p></header>
       <section class="cards">
         ${defs.map((d) => `
           <button class="panel game-card" data-create="${d.id}">
@@ -28,6 +30,7 @@ export async function renderHome(app, navigate) {
         <h2>Your games</h2><div data-sessions></div>
       </section>
     </div>`;
+  bindRulesLinks(app);
   app.querySelectorAll('[data-create]').forEach((b) =>
     b.addEventListener('click', () => navigate(`?create=${b.dataset.create}`)));
   app.querySelector('[data-join]').addEventListener('submit', (e) => {

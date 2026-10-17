@@ -4,13 +4,17 @@ Newest first. Maintained by the `documenter` agent for every player- or develope
 
 ## 2026-10-17
 ### Added
+- In-game rules popup: `Rules::html()` (`src/Rules.php`) is the single source for `/how-to-play` and the popup; public GET API action `rules` -> `{html}`; `public/js/rules.js` (`openRules`, `bindRulesLinks`, `closeRules`; overlay above the modal, accessible, closed on route change); `api.js` `fetchRules` (cached); "How to play" links in the home, create and room headers (real relative links to how-to-play).
+- Ghost count is a host setting `ghosts` (0 to number of werewolves, default 0) shown as a black Ghost row in setup (`.ghost-name`, not counted in the players). `Games::publicList` ghost shape {name,icon,desc,min,max,def,cap}; `Config::RANGES` is public. `ghosts` count is public in views, slots stay private.
 - Evil kill (Werewolf and Mafia) is suggest-then-confirm: `action{target}` suggests, `action{confirm:true}` confirms once all living killers suggest the same player; no pass; timeout/host skip picks randomly among distinct suggestions, none means nobody dies. Views `teamChoices`, `agreed`, `agreedTarget`, `confirmed`, `mine` only for the living evil team.
 - Werewolf setup caps (`cap` in `src/games/werewolf.php`, `Config::capFor`, mirrored in `setup.js`): villagers 3-20; werewolves 1 to ceil(non-wolves/3); Seer max 1; Paladin and Witch max ceil(non-wolves/10); Hunter max = werewolves. Early start clamps to the caps, excess goes to the pool.
 - Paladins know each other (`me.mates`, `knowsEachOther`), share the charge stock and need all living paladins to save.
 - Retention: `Game::endedAt`; `Store::expired`, `peekLive`, `discard`, `lock()`. Ended games are deleted 2 days after the end, others after 7 days idle; expired games answer "Game not found". `info` sweeps about 1 in 20 calls, `create` sweeps.
 - Night action, hunter shot and vote open as popups (`role=dialog`); non-actors see "It is night…".
 ### Changed
-- Ghost is no longer a setup card: a hidden `ghostSlot` trait is given to ceil(non-wolves/5) random non-evil players (topped up on late join); any role, including the Seer, rises as ghost when killed by wolves. The old `ghost` role stays as a legacy flag for old saves.
+- Ghost is no longer a setup card nor automatic (was ceil(non-wolves/5)): a hidden `ghostSlot` trait goes to as many living non-wolf players (Seer included) as the host setting `ghosts`, clamped to wolves dealt/candidates, topped up on early start and late join (alive or dead holders count). A ghost now rises on any night death (wolf kill or poison, unless saved), never from votes or Hunter shots.
+- Old saves: `ghosts` null keeps existing slots and assigns none; old lobby saves start without ghosts; editing settings sets 0.
+- The old `ghost` role stays as a legacy flag for old saves.
 - Night timer is mandatory: 30-90 s per step, default 60 (empty/0 gives 60). Discussion and vote timers stay optional. Old saves are normalised.
 - Witches act independently; heal targets only the wolf victim. A Hunter shooting a Hunter is held in `heldLog` (never in views) until the second shoots or passes; the second shoots blind.
 - Player board is no longer clickable; polling an ended game takes no lock. `Games::publicList` passes `cap`, `legacy`, `knowsEachOther`, `ghost`; `/how-to-play` updated.

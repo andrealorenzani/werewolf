@@ -429,3 +429,39 @@ T::test('api: story chat settings and DMs travel through create and cmd', functi
     T::same([], $r['state']['chat']);
     rmTree($dir);
 });
+
+T::test('api: rules returns trusted, escaped HTML without a token', function () {
+    [$store, $dir] = tmpStore();
+    $api = new Api($store);
+    [$s, $r] = $api->handle('rules', []);
+    T::same(200, $s);
+    T::true(str_contains($r['html'], '<strong>👻 Ghosts:</strong>') && str_contains($r['html'], 'Paladin'));
+    T::true(!str_contains($r['html'], '<script') && !str_contains($r['html'], '?create='), 'no scripts, no create links in the popup');
+    T::true(!str_contains($r['html'], '<strong>👻 Ghost</strong>'), 'no legacy card');
+    rmTree($dir);
+});
+
+T::test('api: create accepts, stores and shows the ghost count; rejects too many', function () {
+    $clock = new Clock();
+    [$store, $dir] = tmpStore($clock);
+    $api = new Api($store, ['clock' => $clock, 'rng' => fn() => 0.5]);
+    $in = ['type' => 'werewolf', 'name' => 'G', 'roles' => ['villager' => 5, 'werewolf' => 2], 'player' => ['name' => 'Host']];
+    [$s] = $api->handle('create', $in + ['ghosts' => 3]);
+    T::same(400, $s);
+    [$s, $c] = $api->handle('create', $in + ['ghosts' => 2]);
+    T::same(200, $s);
+    [, $st] = $api->handle('state', ['id' => $c['id'], 'token' => $c['token'], 'v' => -1]);
+    T::same(2, $st['state']['ghosts']);
+    T::same(7, $st['state']['total']);
+    [$s, $c2] = $api->handle('create', $in);
+    [, $st] = $api->handle('state', ['id' => $c2['id'], 'token' => $c2['token'], 'v' => -1]);
+    T::same(0, $st['state']['ghosts']);
+    // host settings re-validate
+    [$s] = $api->handle('cmd', ['id' => $c['id'], 'token' => $c['token'],
+        'cmd' => ['t' => 'settings', 'name' => 'G', 'roles' => ['villager' => 5, 'werewolf' => 1], 'ghosts' => 2]]);
+    T::same(400, $s);
+    [$s] = $api->handle('cmd', ['id' => $c['id'], 'token' => $c['token'],
+        'cmd' => ['t' => 'settings', 'name' => 'G', 'roles' => ['villager' => 5, 'werewolf' => 1], 'ghosts' => 1]]);
+    T::same(200, $s);
+    rmTree($dir);
+});

@@ -111,3 +111,11 @@ a.game-card { display: block; color: inherit; text-decoration: none; }
 .target.selected { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 20%, var(--panel2)); }
 .target .small { display: block; }
 .cap-note { color: var(--warn); }
+
+/* ghost trait row in setup: black name on a light chip so it stays readable in dark mode */
+.ghost-name { color: #000; background: #dcdde8; padding: 0 .4em; border-radius: 6px; font-weight: 700; }
+
+/* rules popup: above the night/vote popup (40) */
+.rules-overlay { z-index: 60; }
+.rules-box { max-width: 720px; }
+.rules-box h2 { font-size: 1.1rem; }

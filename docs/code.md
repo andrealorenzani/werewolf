@@ -6,7 +6,7 @@
 | Entry | Flow |
 |---|---|
 | `public/index.php` | Server-rendered shell (`Seo::head`, static home content, FAQ JSON-LD; noindex + `X-Robots-Tag` for `?game/?join/?create`) → `js/main.js` (router) → a view |
-| `public/how-to-play.php` | Public rules/roles page built from `src/games`, served at `/how-to-play` |
+| `public/how-to-play.php` | Public rules/roles page (body from `Rules::html`), served at `/how-to-play` |
 | `public/robots.php`, `public/sitemap.php` | Served as `/robots.txt`, `/sitemap.xml` (`Seo::robots()`, `Seo::sitemap()`); routing in `public/.htaccess` |
 | `public/api.php?a=<action>` | Reads JSON body → `Wm\Api::handle` → `Store` → `Game` → JSON |
 | `php tests/run.php` | Loads `tests/bootstrap.php` and every `tests/*Test.php` |
@@ -38,11 +38,12 @@ Errors: `{error}` with HTTP 400 (`GameError`) or 500.
 | `Config.php` | `normalize` (setup validation, limits 4–30 players, role caps via `capFor`, discussion/vote timer ranges 0/empty = off, `nightSeconds` mandatory 30–90, default 60), `profile` (name/avatar), `clean` |
 | `Store.php` | One JSON file per game: `create`, `peek`, `mutate` (flock + atomic write), `remove` (guarded delete under the lock), `expired` (retention rule: ended +2 days, idle 7 days), `peekLive` (peek hiding expired games), `discard` (delete under lock), private `lock()`, `sweep`, `validId` |
 | `Seo.php` | `PAGES` (indexable pages: title, description, `updated`), `head()` (meta, canonical, Open Graph, JSON-LD; noindex for private views), `robots()`, `sitemap()`, `origin()`/`url()` from the request |
-| `Games.php` | Registry of game ids, `get`, `publicList` (role data incl. `cap`, `legacy`, `knowsEachOther`, `ghost`) |
+| `Rules.php` | `Rules::html(bool $links)`: rules/character guide as trusted escaped HTML; single source for `/how-to-play` and the popup (values from `Config`, roles from `Games`) |
+| `Games.php` | Registry of game ids, `get`, `publicList` (role data incl. `cap`, `legacy`, `knowsEachOther`, `ghost` = {name,icon,desc,min,max,def,cap}) |
 | `GameError.php` | Exception whose message is shown to players |
 | `games/werewolf.php`, `games/mafia.php` | Data-only definitions: teams, narration strings, roles |
 
-Evil kill: `action` stores suggestions, `agreedTarget` and `teamChoices` (view) drive the confirm step; ghost trait: `ghostSlot` in player state, `hauntSpec`; `heldLog` + `flushHeld` hold the Hunter-shoots-Hunter log line; `endedAt` feeds `Store::expired`.
+Evil kill: `action` stores suggestions, `agreedTarget` and `teamChoices` (view) drive the confirm step; ghost trait: `ghostSlot` in player state, count from setting `ghosts` (null in old saves), `hauntSpec`; `Config::RANGES` is public; `heldLog` + `flushHeld` hold the Hunter-shoots-Hunter log line; `endedAt` feeds `Store::expired`.
 
 Key `Game` methods: `command` (router) · `composition` (dealt/pool split) · `joinable`, `addPlayer`, `drawLateRole` (late join) · `configure` (host `settings`) · `updateProfile` · `enter` (phase entry) · `tick`/`advance` (timers) · `action`, `actorsForStep`, `canAct`, `usesLeft`, `advanceNight`, `applyNightEffects`, `finishNight` (night, 3 steps) · `chatChannel`, `chatMessage` (channels, DMs, retention), `storyLog` (end-of-game log with chat), `canDelete` · `vote`, `resolveVote` · `kill`, `afterDeaths`, `finishHunter`, `checkWin` · `viewFor`, `actionFor`, `canSeeRole` (what a player may see).
 
@@ -50,12 +51,13 @@ Key `Game` methods: `command` (router) · `composition` (dealt/pool split) · `j
 | File | Responsibility |
 |---|---|
 | `main.js` | Router: `?create=TYPE`, `?join=ID`, `?game=ID`, otherwise home; `navigate('?x=…')` |
-| `api.js` | `api.php` wrappers (incl. `deleteGame`), `joinUrl`, `qrDataUrl` |
+| `api.js` | `api.php` wrappers (incl. `deleteGame`, cached `fetchRules`), `joinUrl`, `qrDataUrl` |
+| `rules.js` | Rules popup: `openRules`, `closeRules`, `bindRulesLinks` (body-level overlay above the modal, a11y, closed on route change/room stop) |
 | `store.js` | `localStorage`: profile (name+avatar), sessions (token per game) |
 | `avatar.js` | Image → 96 px JPEG (`fileToAvatar`, `canvasToAvatar`), camera dialog (`takePhotoDialog`/`closePhotoDialog`, file-input fallback), avatar HTML, profile form |
 | `util.js` | `esc`, `toast`, `setHtml` (skip unchanged HTML), `$` |
 | `views/home.js` | Choose game, join by code, saved games (Rejoin / Remove: host deletes via `deleteGame`, others forget locally) |
-| `views/setup.js` | `buildSetupForm`: shared setup form (name, description, role counts with caps mirrored from `Config::capFor`, timers), used by create and the room's host settings |
+| `views/setup.js` | `buildSetupForm`: shared setup form (name, description, role counts with caps mirrored from `Config::capFor`, ghost count row `.ghost-name`, timers), used by create and the room's host settings |
 | `views/create.js` | Create page: profile + setup form |
 | `views/join.js` | Join form for QR links |
 | `views/room.js` | Lobby (host settings, avatars) + game UI (night action, hunter shot and vote as `role=dialog` popups; "It is night…" for non-actors; evil kill suggest/confirm UI), "My profile" editor, polling loop, command sending |
@@ -70,7 +72,7 @@ No database. `data/<ID>.json` + `data/<ID>.lock` written by `Store`; layout of t
 |---|---|
 | `run.php` | Runner (`php tests/run.php [name-filter]`) |
 | `bootstrap.php` | `T` assertions, `Clock`, `startedGame()`, `toNight()`, `act()` |
-| `EngineTest.php` | Rules: config, phases, night, vote, win, hunter, witch, escort, vigilante, visibility, chat, lazy timers, optional timers, composition/pool, late join, host settings, delete, DMs, story chat, paladin, ghost trait, kill agreement, hunter vs hunter, caps, retention, profile, serialisation |
+| `EngineTest.php` | Rules: config, phases, night, vote, win, hunter, witch, escort, vigilante, visibility, chat, lazy timers, optional timers, composition/pool, late join, host settings, delete, DMs, story chat, paladin, ghost trait (host-set count), rules popup/API, kill agreement, hunter vs hunter, caps, retention, profile, serialisation |
 | `ApiTest.php` | API + storage: create/join/poll/commands, delete, avatars, unchanged polls, lazy timers, id validation, sweep |
 | `SeoTest.php` | `Seo`: title/description lengths, indexable vs noindex head, JSON-LD, sitemap and robots |
 Naming: `T::test('what it proves', fn)`; one behaviour per test.
@@ -86,6 +88,7 @@ Naming: `T::test('what it proves', fn)`; one behaviour per test.
 | Add a whole new game | `src/games/<id>.php` + id in `Games::IDS`; UI picks it up automatically |
 | Change phase/vote/win rules | `Game.php`, `docs/rules.md`, `EngineTest.php` |
 | Change setup limits/defaults/caps | `Config.php` (`capFor`, `normalize`), role `def`/`max`/`cap` in `src/games/*.php`, mirror in `views/setup.js`, `Game::composition` clamp |
+| Change the rules text (page and popup) | `Rules::html`; `public/how-to-play.php` only wraps it; popup in `public/js/rules.js` |
 | Change retention (delete after N days) | `Store::IDLE_MS`/`ENDED_MS`, `expired`, `peekLive`, `sweep`; `Game::endedAt` |
 | Change evil-kill agreement / Paladin / Witch / ghost trait | `Game::action`, `agreedTarget`, `applyNightEffects`, `hauntSpec`, `viewFor`; `room.js` popups |
 | Change early-start / late-join rules | `Game::composition`, `joinable`, `drawLateRole`, `docs/rules.md`, `EngineTest.php` |

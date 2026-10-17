@@ -26,6 +26,8 @@ final class Game
     public array $roleCounts;
     public array $settings;
     public int $total;
+    /** Secret ghost-trait holders to deal (setup choice, <= number of werewolves). null = old save: keep what exists. */
+    public ?int $ghosts = null;
     /** @var Player[] */
     public array $players = [];
     public ?string $hostId = null;
@@ -83,6 +85,7 @@ final class Game
         $g = new self([
             'id' => $id, 'type' => $type, 'name' => $config['name'], 'description' => $config['description'],
             'roleCounts' => $config['roleCounts'], 'settings' => $config['settings'], 'total' => $config['total'],
+            'ghosts' => $config['ghosts'] ?? 0,
             'createdAt' => isset($deps['clock']) ? (int)($deps['clock'])() : (int)(microtime(true) * 1000),
         ], $deps);
         $g->dirty = true;
@@ -97,7 +100,7 @@ final class Game
     public function toArray(): array
     {
         $out = [];
-        foreach (['id', 'type', 'name', 'description', 'roleCounts', 'settings', 'total', 'hostId', 'phase', 'round',
+        foreach (['id', 'type', 'name', 'description', 'roleCounts', 'settings', 'total', 'ghosts', 'hostId', 'phase', 'round',
             'deadline', 'seq', 'version', 'log', 'chat', 'winner', 'votes', 'night', 'hunter', 'pendingHunters',
             'hunterNext', 'marks', 'createdAt', 'pool', 'endedAt', 'heldLog'] as $k) {
             $out[$k] = $this->$k;
@@ -315,23 +318,26 @@ final class Game
     }
 
     /**
-     * Ghost trait (games whose definition has a `ghost` entry): ceil(non-evil players / per) random non-evil
-     * players carry a secret ghost slot. Tops up when players join late. The trait is private to the holder.
+     * Ghost trait (games whose definition has a `ghost` entry): `ghosts` (setup choice) random alive non-evil
+     * players carry a secret ghost slot, never more than the evil players actually dealt. Only tops up (early
+     * start, late join); old saves without the setting (null) keep what they have. Private to the holder.
      */
     private function assignGhostSlots(): void
     {
-        $spec = $this->def['ghost'] ?? null;
-        if (!$spec) {
+        if (!isset($this->def['ghost']) || $this->ghosts === null) {
             return;
         }
-        $cands = array_values(array_filter($this->players, fn(Player $p) => $p->role !== null && $this->teamOf($p) !== 'evil'
+        $dealt = array_filter($this->players, fn(Player $p) => $p->role !== null);
+        $evil = count(array_filter($dealt, fn(Player $p) => $this->teamOf($p) === 'evil'));
+        $cands = array_values(array_filter($dealt, fn(Player $p) => $p->alive && $this->teamOf($p) !== 'evil'
             && !isset($this->roleOf($p)['haunt'])));
-        $want = (int)ceil(count($cands) / $spec['per']);
-        $have = count(array_filter($cands, static fn(Player $p) => !empty($p->state['ghostSlot'])));
+        $want = min($this->ghosts, $evil, count($cands));
+        // holders count whether alive or not, so a dead holder is never replaced by a late top-up
+        $have = count(array_filter($dealt, static fn(Player $p) => !empty($p->state['ghostSlot'])));
         $free = $this->shuffle(array_values(array_filter($cands, static fn(Player $p) => empty($p->state['ghostSlot']))));
         foreach (array_slice($free, 0, max(0, $want - $have)) as $p) {
             $p->state['ghostSlot'] = true;
-            $this->note($p, 'A restless spirit clings to you. If the werewolves kill you at night, your ghost will rise.');
+            $this->note($p, 'A restless spirit clings to you. If you die in the night, your ghost will rise.');
         }
     }
 
@@ -493,6 +499,7 @@ final class Game
         $this->roleCounts = $cfg['roleCounts'];
         $this->settings = $cfg['settings'];
         $this->total = $cfg['total'];
+        $this->ghosts = $cfg['ghosts'];
         $this->bump();
     }
 
@@ -1180,25 +1187,34 @@ final class Game
             }
         }
 
-        // A player killed by the evil team whose role haunts rises as a ghost
+        // A dying player whose card (legacy: wolf kill only) or secret trait haunts rises as a ghost
         $ghosts = [];
-        if ($wolfKills && in_array($victim, $dying, true)) {
-            $v = $this->player($victim);
-            $haunt = $this->hauntSpec($v);
-            if ($haunt && ($haunt['trigger'] ?? null) === 'evil') {
-                $evil = $this->rand01() < (float)($haunt['evilChance'] ?? 0.5);
-                $v->state['ghost'] = ['evil' => $evil];
+        foreach ($dying as $id) {
+            $v = $this->player($id);
+            $haunt = $v ? $this->hauntSpec($v) : null;
+            if ($haunt && (($haunt['trigger'] ?? null) !== 'evil' || ($wolfKills && $id === $victim)) && $this->raiseGhost($v, $haunt)) {
                 $ghosts[] = $v->id;
-                unset($this->night['actions'][$v->id]); // the earlier action is spent; the ghost acts again in step 3
-                $good = $this->def['teams']['good']['name'];
-                $bad = $this->def['teams']['evil']['name'];
-                $this->note($v, $evil
-                    ? "Your ghost lingers, but death has turned you: you now side with the {$bad}. Point a finger at someone good to make the others doubt them."
-                    : "Your ghost lingers and you stay on the side of the {$good}. Point a finger at someone you believe belongs to the {$bad}.");
             }
         }
         $this->night['dying'] = $dying;
         $this->night['ghosts'] = $ghosts;
+    }
+
+    /** Turn a dying player into a ghost (once). Returns false when they already are one. */
+    private function raiseGhost(Player $v, array $haunt): bool
+    {
+        if (!empty($v->state['ghost'])) {
+            return false;
+        }
+        $evil = $this->rand01() < (float)($haunt['evilChance'] ?? 0.5);
+        $v->state['ghost'] = ['evil' => $evil];
+        unset($this->night['actions'][$v->id]); // the earlier action is spent; the ghost acts again in step 3
+        $good = $this->def['teams']['good']['name'];
+        $bad = $this->def['teams']['evil']['name'];
+        $this->note($v, $evil
+            ? "Your ghost lingers, but death has turned you: you now side with the {$bad}. Point a finger at someone good to make the others doubt them."
+            : "Your ghost lingers and you stay on the side of the {$good}. Point a finger at someone you believe belongs to the {$bad}.");
+        return true;
     }
 
     /** Dawn: announce the deaths (ghosts pointing a finger), kill, and move on to the day. */
@@ -1377,7 +1393,7 @@ final class Game
         $view = [
             'id' => $this->id, 'type' => $this->type, 'name' => $this->name, 'description' => $this->description,
             'phase' => $this->phase, 'round' => $this->round, 'seq' => $this->seq, 'version' => $this->version,
-            'deadline' => $this->deadline, 'now' => $this->now(), 'joinable' => $this->joinable(), 'total' => $this->total, 'hostId' => $this->hostId,
+            'deadline' => $this->deadline, 'now' => $this->now(), 'joinable' => $this->joinable(), 'total' => $this->total, 'ghosts' => $this->ghosts, 'hostId' => $this->hostId,
             'settings' => $this->settings, 'roleCounts' => $this->roleCounts, 'winner' => $this->winner,
             'players' => $players,
             'me' => [

@@ -214,9 +214,9 @@ T::test('state survives a JSON round trip', function () {
 });
 
 // ---------- optional timers, flexible start, late join, settings, profile ----------
-function lobby(string $type, array $roles, int $joined, array $settings = []): array
+function lobby(string $type, array $roles, int $joined, array $settings = [], int $ghosts = 0): array
 {
-    $cfg = Config::normalize(Games::get($type), ['name' => 'L', 'roles' => $roles, 'settings' => $settings]);
+    $cfg = Config::normalize(Games::get($type), ['name' => 'L', 'roles' => $roles, 'settings' => $settings, 'ghosts' => $ghosts]);
     $clock = new Clock();
     $g = Game::create('TESTBB', $type, $cfg, ['rng' => fn() => 0.5, 'clock' => $clock]);
     $ps = [];
@@ -1175,7 +1175,10 @@ T::test('caps: the legacy Ghost card is ignored by the setup and hidden in the r
     $list = array_column(array_column(Games::publicList(), null, 'id')['werewolf']['roles'], null, 'id');
     T::same(true, $list['ghost']['legacy']);
     T::same(false, $list['seer']['legacy']);
-    T::same(5, array_column(Games::publicList(), null, 'id')['werewolf']['ghost']['per']);
+    $spec = array_column(Games::publicList(), null, 'id')['werewolf']['ghost'];
+    T::same(['name' => 'Ghost', 'icon' => '👻', 'min' => 0, 'max' => 10, 'def' => 0, 'cap' => ['count' => 'werewolf']],
+        array_diff_key($spec, ['desc' => 1]));
+    T::true($spec['desc'] !== '');
     T::same(null, array_column(Games::publicList(), null, 'id')['mafia']['ghost']);
 });
 
@@ -1397,12 +1400,13 @@ function ghostHolders(Game $g): array
     return array_values(array_filter($g->players, fn($p) => !empty($p->state['ghostSlot'])));
 }
 
-T::test('ghost trait: ceil(non-wolves / 5) random good players get a secret slot at start, never a wolf', function () {
-    foreach ([[4, 1, 5, 1], [5, 1, 6, 1], [6, 1, 7, 2], [9, 2, 11, 2], [11, 1, 12, 3]] as [$villagers, $wolves, $n, $slots]) {
+T::test('ghost trait: the chosen number of random non-wolf players get a secret slot at start, never a wolf', function () {
+    foreach ([[4, 1, 5, 1, 1], [5, 2, 7, 2, 2], [9, 3, 12, 2, 2], [9, 2, 11, 0, 0]] as [$villagers, $wolves, $n, $ghosts, $slots]) {
         foreach ([0.0, 0.3, 0.7, 0.99] as $r) {
-            [$g, $ps] = lobby('werewolf', ['villager' => $villagers, 'werewolf' => $wolves], $n);
+            [$g, $ps] = lobby('werewolf', ['villager' => $villagers, 'werewolf' => $wolves], $n, [], $ghosts);
             setRng($g, $r);
             $total = $g->total;
+            T::same($ghosts, $g->ghosts);
             $g->start($ps[0]->id);
             $h = ghostHolders($g);
             T::same($slots, count($h), "$n players rng $r");
@@ -1422,30 +1426,112 @@ T::test('ghost trait: ceil(non-wolves / 5) random good players get a secret slot
     }
 });
 
+T::test('ghost trait: the seer may carry it, wolves never', function () {
+    $seen = false;
+    foreach (range(0, 40) as $i) {
+        [$g, $ps] = lobby('werewolf', ['villager' => 3, 'werewolf' => 1, 'seer' => 1], 5, [], 1);
+        setRng($g, ($i % 10) / 10);
+        $g->start($ps[0]->id);
+        $h = ghostHolders($g);
+        T::same(1, count($h));
+        T::true($h[0]->role !== 'werewolf');
+        $seen = $seen || $h[0]->role === 'seer';
+    }
+    T::true($seen, 'a seer can be chosen');
+});
+
+T::test('ghost trait: early start clamps the slots to the wolves actually dealt and to the candidates', function () {
+    // 3 wolves, 3 ghosts configured, only 4 players: one wolf dealt -> one ghost
+    [$g, $ps] = lobby('werewolf', ['villager' => 8, 'werewolf' => 3], 4, [], 3);
+    $g->start($ps[0]->id);
+    $wolves = count(array_filter($g->players, fn($p) => $p->role === 'werewolf'));
+    T::same(1, $wolves);
+    T::same(1, count(ghostHolders($g)));
+    T::same(3, $g->ghosts, 'the setting itself is kept');
+});
+
 T::test('ghost trait: only the holder is told; mafia has no ghosts', function () {
-    [$g, $ps] = lobby('werewolf', ['villager' => 6, 'werewolf' => 1], 7);
+    [$g, $ps] = lobby('werewolf', ['villager' => 6, 'werewolf' => 1], 7, [], 1);
     $g->start($ps[0]->id);
     $holders = ghostHolders($g);
     $other = array_values(array_filter($g->players, fn($p) => empty($p->state['ghostSlot'])))[0];
     T::true(str_contains(json_encode($g->viewFor($holders[0]->id)['me']['notes']), 'restless spirit'));
     T::true(!str_contains(json_encode($g->viewFor($other->id)), 'restless'));
     T::true(!str_contains(json_encode($g->viewFor($holders[0]->id)['players']), 'restless'));
-    [$m, $mps] = lobby('mafia', ['citizen' => 5, 'mafioso' => 1], 6);
+    T::same(1, $g->viewFor($other->id)['ghosts'], 'the count is public, the holders are not');
+    [$m, $mps] = lobby('mafia', ['citizen' => 5, 'mafioso' => 1], 6, [], 1);
     $m->start($mps[0]->id);
     T::same([], ghostHolders($m));
+    T::same(0, $m->ghosts);
 });
 
-T::test('ghost trait: late joiners top the number of slots up', function () {
-    [$g, $ps] = lobby('werewolf', ['villager' => 7, 'werewolf' => 1, 'seer' => 1], 5);
-    $g->start($ps[0]->id); // 4 non-wolves -> 1 slot
-    T::same(1, count(ghostHolders($g)));
-    $g->addPlayer(['name' => 'l1']); // 5 non-wolves -> still 1
-    T::same(1, count(ghostHolders($g)));
-    $g->addPlayer(['name' => 'l2']); // 6 non-wolves -> 2
-    T::same(2, count(ghostHolders($g)));
+T::test('ghost trait: late joiners top the slots up to the setting, never beyond', function () {
+    // 2 wolves, 2 ghosts; starts with 4 players (1 wolf dealt) -> 1 slot; a later wolf raises the allowance
+    [$g, $ps] = lobby('werewolf', ['villager' => 7, 'werewolf' => 2, 'seer' => 1], 4, [], 2);
+    $g->start($ps[0]->id);
+    $wolves = fn() => count(array_filter($g->players, fn($p) => $p->role === 'werewolf'));
+    T::same(min(2, $wolves()), count(ghostHolders($g)));
+    $before = count(ghostHolders($g));
+    foreach (['l1', 'l2', 'l3', 'l4', 'l5', 'l6'] as $name) {
+        $g->addPlayer(['name' => $name]);
+        T::true(count(ghostHolders($g)) <= 2);
+        T::true(count(ghostHolders($g)) >= $before);
+        T::same(min(2, $wolves()), count(ghostHolders($g)));
+        $before = count(ghostHolders($g));
+    }
     foreach (ghostHolders($g) as $p) {
+        T::true($p->role !== 'werewolf');
         T::true($g->viewFor($p->id)['me']['notes'] !== []);
     }
+});
+
+T::test('ghost trait: an old save without the setting keeps its slots and assigns none', function () {
+    [$g, $ps] = lobby('werewolf', ['villager' => 8, 'werewolf' => 1], 7, [], 1);
+    $g->start($ps[0]->id);
+    $a = json_decode(json_encode($g->toArray()), true);
+    T::same(1, $a['ghosts']);
+    unset($a['ghosts']);
+    $old = Game::fromArray($a, ['rng' => fn() => 0.5, 'clock' => new Clock()]);
+    T::same(null, $old->ghosts);
+    T::same(1, count(ghostHolders($old)));
+    $old->addPlayer(['name' => 'late']);
+    T::same(1, count(ghostHolders($old)));
+    // and a legacy save with no slots at all gets none
+    foreach ($a['players'] as &$pl) {
+        unset($pl['state']['ghostSlot']);
+    }
+    unset($pl);
+    $none = Game::fromArray($a, ['rng' => fn() => 0.5, 'clock' => new Clock()]);
+    $none->addPlayer(['name' => 'late']);
+    T::same(0, count(ghostHolders($none)));
+    // the round trip keeps the setting
+    $again = Game::fromArray(json_decode(json_encode($g->toArray()), true), ['clock' => new Clock()]);
+    T::same(1, $again->ghosts);
+});
+
+T::test('ghost trait: configure re-validates the count against the wolves', function () {
+    [$g, $ps] = lobby('werewolf', ['villager' => 6, 'werewolf' => 2], 2, [], 2);
+    $in = ['name' => 'x', 'roles' => ['villager' => 6, 'werewolf' => 1], 'ghosts' => 2];
+    T::throws(fn() => $g->configure($ps[0]->id, $in), '/At most 1 Ghost/');
+    T::same(2, $g->ghosts);
+    $g->configure($ps[0]->id, ['ghosts' => 1] + $in);
+    T::same(1, $g->ghosts);
+    $g->configure($ps[0]->id, ['ghosts' => 0] + $in);
+    T::same(0, $g->ghosts);
+});
+
+T::test('ghost trait: setup validation (negative, non-integer, above the wolves, default, mafia)', function () {
+    $roles = ['villager' => 5, 'werewolf' => 2];
+    $n = fn(array $extra) => Config::normalize(Games::get('werewolf'), ['name' => 'x', 'roles' => $roles] + $extra);
+    T::same(0, $n([])['ghosts']);
+    T::same(2, $n(['ghosts' => 2])['ghosts']);
+    T::same(1, $n(['ghosts' => '1'])['ghosts']);
+    T::same(7, $n(['ghosts' => 2])['total'], 'ghosts are not extra players');
+    T::throws(fn() => $n(['ghosts' => -1]), '/Invalid count for Ghost/');
+    T::throws(fn() => $n(['ghosts' => 'x']), '/Invalid count for Ghost/');
+    T::throws(fn() => $n(['ghosts' => 1.5]), '/Invalid count for Ghost/');
+    T::throws(fn() => $n(['ghosts' => 3]), '/At most 2 Ghost/');
+    T::same(0, Config::normalize(Games::get('mafia'), ['name' => 'x', 'roles' => ['citizen' => 5, 'mafioso' => 1], 'ghosts' => 1])['ghosts']);
 });
 
 /** A started game where $slot players carry the ghost trait. */
@@ -1529,7 +1615,7 @@ T::test('ghost trait: the evil roll uses the ghost data (chance 0.5) and an evil
     }
 });
 
-T::test('ghost trait: only a wolf kill that goes through creates a ghost', function () {
+T::test('ghost trait: night deaths raise a ghost, but not when a paladin or the witch prevents the death', function () {
     // saved by a paladin
     [$g, $ps] = ghostGame(['werewolf', 'paladin', 'villager', 'villager', 'villager', 'villager'], [2]);
     toNight($g, $ps);
@@ -1544,23 +1630,91 @@ T::test('ghost trait: only a wolf kill that goes through creates a ghost', funct
     killAct($g, $ps[0], $ps[2]);
     act($g, $ps[1], ['heal' => true]);
     T::true($ps[2]->alive);
-    // poisoned: no ghost
+    T::true(empty($ps[2]->state['ghost']));
+});
+
+T::test('ghost trait: a poisoned holder rises too and points at a werewolf (good ghost)', function () {
     [$g, $ps] = ghostGame(['werewolf', 'witch', 'villager', 'villager', 'villager', 'villager'], [3]);
     toNight($g, $ps);
     killAct($g, $ps[0], $ps[2]);
     act($g, $ps[1], ['heal' => false, 'poison' => $ps[3]->id]);
-    T::same(false, $ps[3]->alive);
+    T::same(3, $g->night['step']);
+    T::same(['evil' => false], $g->viewFor($ps[3]->id)['me']['ghost']);
+    act($g, $ps[3], ['target' => $ps[0]->id]);
     T::same('discussion', $g->phase);
-    T::true(empty($ps[3]->state['ghost']));
+    T::false($ps[3]->alive);
+    T::false($ps[2]->alive);
+    T::matches('/Their ghost is now floating around p0/', $g->log[count($g->log) - 3]['text'] . ' ' . $g->log[count($g->log) - 2]['text']);
+    T::same([[$ps[0]->id, $ps[3]->id]], $g->marks);
+});
+
+T::test('ghost trait: the targets follow the side (good ghost: wolves, evil ghost: good non-wolves) and one pick only', function () {
+    foreach ([[0.9, false], [0.1, true]] as [$r, $evil]) {
+        [$g, $ps] = ghostGame(WW, [4]);
+        setRng($g, (float)$r);
+        toNight($g, $ps);
+        act($g, $ps[4], ['target' => $ps[2]->id]);
+        killAct($g, $ps[0], $ps[4]);
+        T::same($evil, $g->viewFor($ps[4]->id)['me']['ghost']['evil']);
+        $targets = $g->viewFor($ps[4]->id)['me']['action']['targets'];
+        $wolves = [$ps[0]->id];
+        foreach ($targets as $t) {
+            T::same(!$evil, in_array($t, $wolves, true));
+        }
+        T::true($targets !== []);
+        act($g, $ps[4], ['target' => $targets[0]]);
+        T::same(1, count($g->marks));
+    }
+});
+
+T::test('ghost trait: a holder who dies by vote still counts, a later top-up never exceeds the total', function () {
+    [$g, $ps] = lobby('werewolf', ['villager' => 7, 'werewolf' => 2, 'seer' => 1], 8, [], 1);
+    $g->start($ps[0]->id);
+    $h = ghostHolders($g);
+    T::same(1, count($h));
+    $h[0]->alive = false; // eliminated (vote)
+    $g->addPlayer(['name' => 'late']);
+    T::same(1, count(ghostHolders($g)), 'no replacement slot for a dead holder');
+});
+
+T::test('ghost trait: view exposes the ghosts total as int and never the slot', function () {
+    [$g, $ps] = ghostGame(['werewolf', 'villager', 'villager', 'villager', 'villager', 'villager'], [1]);
+    foreach ($ps as $p) {
+        $v = $g->viewFor($p->id);
+        T::true(is_int($v['ghosts']));
+        T::true(!str_contains(json_encode($v), 'ghostSlot'));
+    }
+});
+
+T::test('ghost trait: a vote or a hunter shot never raises a ghost', function () {
+    // voted out
+    [$g, $ps] = ghostGame(['werewolf', 'villager', 'villager', 'villager', 'villager', 'villager'], [1]);
+    toNight($g, $ps);
+    $g->command($ps[0]->id, ['t' => 'skip']);
+    $g->command($ps[0]->id, ['t' => 'skip']);
+    foreach ([0, 2, 3, 4, 5] as $i) {
+        $g->command($ps[$i]->id, ['t' => 'vote', 'target' => $ps[1]->id]);
+    }
+    $g->command($ps[1]->id, ['t' => 'vote', 'target' => null]);
+    T::false($ps[1]->alive);
+    T::true(empty($ps[1]->state['ghost']));
+    T::same('night', $g->phase);
     T::same([], $g->marks);
-    // voted out, shot by a hunter
+    // shot by a hunter
     [$g, $ps] = ghostGame(['werewolf', 'hunter', 'villager', 'villager', 'villager', 'villager'], [2]);
     toNight($g, $ps);
     killAct($g, $ps[0], $ps[1]);
     act($g, $ps[1], ['target' => $ps[2]->id]);
-    T::same(false, $ps[2]->alive);
+    T::false($ps[2]->alive);
     T::true(empty($ps[2]->state['ghost']));
     T::same('discussion', $g->phase);
+});
+
+T::test('ghost trait: a ghost is raised only once', function () {
+    [$g, $ps] = ghostGame(WW, [4]);
+    $m = new ReflectionMethod(Game::class, 'raiseGhost');
+    T::true($m->invoke($g, $ps[4], ['evilChance' => 0.5]));
+    T::false($m->invoke($g, $ps[4], ['evilChance' => 0.5]));
 });
 
 T::test('ghost trait: a legacy Ghost role in an old save still works, and the trait adds nothing for it', function () {

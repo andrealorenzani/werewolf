@@ -3,6 +3,7 @@ import { renderHome } from './views/home.js';
 import { renderJoin } from './views/join.js';
 import { renderCreate } from './views/create.js';
 import { openRoom } from './views/room.js';
+import { closeRules } from './rules.js';
 
 const app = document.getElementById('app');
 
@@ -18,6 +19,7 @@ function route() {
   const joinId = params.get('join')?.toUpperCase();
   const gameId = params.get('game')?.toUpperCase();
   const create = params.get('create');
+  closeRules();
   app.replaceChildren();
   if (gameId && getSession(gameId)) return openRoom(app, gameId, navigate);
   if (joinId) {

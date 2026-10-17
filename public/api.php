@@ -23,7 +23,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         echo json_encode(['error' => 'Bad request body.']);
         exit;
     }
-} elseif ($action !== 'defs' && $action !== 'info') {
+} elseif (!in_array($action, ['defs', 'info', 'rules'], true)) {
     http_response_code(405);
     echo json_encode(['error' => 'Use POST.']);
     exit;

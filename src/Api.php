@@ -9,6 +9,7 @@ namespace Wm;
  *
  * Actions (all JSON; authenticated calls carry the player's secret `token` in the POST body):
  *   defs                               GET   list of games and roles
+ *   rules                              GET   trusted rules HTML for the in-game popup -> {html}
  *   create {type,name,description,roles,settings,player}   -> {id, playerId, token}
  *   info   {id}                        game summary for the join page
  *   join   {id, player}                -> {id, playerId, token}
@@ -41,6 +42,7 @@ final class Api
     {
         return match ($action) {
             'defs' => ['games' => Games::publicList()],
+            'rules' => ['html' => Rules::html(false)],
             'create' => $this->create($in),
             'info' => $this->info($this->id($in)),
             'join' => $this->join($this->id($in), $in['player'] ?? null),
