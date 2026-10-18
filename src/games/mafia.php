@@ -12,6 +12,7 @@ return [
     'teams' => [
         'good' => ['name' => 'Town', 'goal' => 'Find and eliminate every member of the Mafia.'],
         'evil' => ['name' => 'Mafia', 'goal' => 'Eliminate citizens until the Mafia are at least as many as the rest.'],
+        'neutral' => ['name' => 'Neutral', 'goal' => 'Pick a side during the game and win with it.'],
     ],
     'text' => [
         'nightFalls' => 'Night %d. The town goes to sleep…',
@@ -47,5 +48,10 @@ return [
         ['id' => 'vigilante', 'name' => 'Vigilante', 'team' => 'good', 'icon' => '🎯', 'max' => 1, 'def' => 0,
             'desc' => 'Once per game, you may shoot a player at night.',
             'night' => ['kind' => 'shoot', 'prompt' => 'Shoot someone (once per game), or hold your fire.']],
+        // Neutral: not counted for either side in the win check; picks a side (command `side`) and wins or loses with it.
+        ['id' => 'corrupt', 'name' => 'Corrupt', 'team' => 'neutral', 'icon' => '🤝', 'max' => 1, 'def' => 0,
+            'allegiance' => 'choose', 'mutualWith' => ['mafioso', 'godfather', 'detective', 'vigilante'],
+            'goal' => 'Choose the Town or the Mafia at any time while you are alive; the choice is final. If you never choose, you lose.',
+            'desc' => 'A corrupt official with no power at night. You know the Mafia, the Detective and the Vigilante, and they know you. Choose which side you play for: you win with it and lose if it loses. You do not count for either side when the game checks for a winner.'],
     ],
 ];

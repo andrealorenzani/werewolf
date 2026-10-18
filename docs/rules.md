@@ -37,6 +37,8 @@ Eliminated players can no longer vote or use powers. They may chat with other el
 Checked after every elimination:
 - **Good team wins** when no evil member is alive.
 - **Evil team wins** when living evil members ≥ living good members.
+- **Neutral players** (the Mafia Corrupt) count for neither side in this check. They win or lose with the side they chose (see *Corrupt*). At the end, each player is told whether they personally won.
+- Setup: neutral cards are dealt only while the real good players still outnumber the evil team (also for early start and late join); otherwise they stay in the pool.
 
 ### Night order
 Night has up to three steps. The night ends as soon as all acting players submit, when the step timer expires (the night timer is always on), or when the host skips the step (missing actions count as "skip"). The host can also skip the Hunter's shot.
@@ -83,6 +85,7 @@ In the room these settings are listed under "Your character". The lobby and post
 | Paladin | Villagers | After the werewolves choose, may shield their victim (the victim survives). Paladins know each other. They share one stock of charges: werewolves in the game (dead ones included) minus charges spent by any paladin. The shield works only if **all living paladins** choose to save; it then costs one charge that night. A charge is spent even if the Witch also heals; the shield does not stop poison or the Hunter's/Vigilante's shots. Max: one per 10 non-wolves (rounded up). |
 | Ghost (hidden trait, not a card) | – | The host sets the number of ghosts (0 up to the number of werewolves; default 0). They are not extra players: that many random living non-wolf players (the Seer too) secretly get the trait. If fewer werewolves or candidates exist than asked (early start), it is reduced; late joiners top it up (holders alive or dead count). Only the holder knows. If a holder dies **at night** (killed by the werewolves or poisoned, unless saved) they become a ghost; votes and Hunter shots never raise one. 50% good (points a finger at a werewolf-side player), 50% evil (points at a good player, not the dying). Only they know their side (green or red banner) and they see everyone's roles. Ghosts act at night step 3, after Paladins and Witches. Dawn announces it, the ghost's role is revealed even if *reveal characters* is off, and the target shows "selected by ghost X" for that day. In setup the Ghost row is shown in black and does not count towards the players. |
 | Witch | Villagers | Knows the werewolves' victim. Once per game may **heal** that victim, and once per game may **poison** anyone. Witches act independently (two heals spend both potions). Max: one per 10 non-wolves (rounded up). |
+| Cultist | Villagers (wins with the werewolves) | Looks like a villager to everyone, the Seer included, and counts as a villager for the win check, the Ghost and the Paladin charges. Has no power and does not know the werewolves. When the werewolves choose him as their victim he **survives and becomes a werewolf** (red name in setup). If the Witch healed him, a Paladin shielded him, or he was protected, nothing happens. If another source kills him the same night (e.g. a shot), he simply dies. A Witch poison on him the same night is void and her poison is not spent (she is told). The werewolves are told he joined and that he was a Cultist; he reads the werewolf chat only from the turn onward, and loses any Ghost trait. He wins with the werewolves even if he is dead. If the last werewolf dies while he is still unturned, the villagers win and he loses. Max: as many as werewolves. Known trade-off: setup counts him as good for "villagers must outnumber werewolves". |
 | Hunter | Villagers | When they die (night, vote, or any cause) they immediately **shoot** one player (or nobody). If a Hunter shoots another Hunter, the news "A shot B" is held back until B has shot or passed (B shoots blind). Max: as many as werewolves. |
 
 The Doctor is not in Werewolf (replaced by the Paladin).
@@ -103,6 +106,7 @@ Suggestion: one extra werewolf per ~4 players beyond 8.
 | Doctor | Town | Each night, protects one player (self allowed). Max 1. |
 | Escort | Town | Each night, distracts one player: their action fails. Max 1. |
 | Vigilante | Town | Once per game, shoots one player at night. Max 1. |
+| Corrupt | Neutral | No night power. Knows the Mafioso, Godfather, Detective and Vigilante, and they know him. At any time while alive (discussion, vote, night, hunter shot) he chooses **Town or Mafia** once; the choice is final and private until the game ends. He wins if his side wins; if he never chooses, he loses. Counts for neither side in the win check. Max 1. |
 
 At least one Mafia member (Mafioso or Godfather) is required.
 Default set: 5 Citizens, 1 Mafioso (other characters 0).
@@ -115,6 +119,7 @@ Default set: 5 Citizens, 1 Mafioso (other characters 0).
 | Investigator | Seer: "is a werewolf" | Detective: "is Mafia"; Godfather evades |
 | Unique good roles | Witch, Hunter, Paladin (ghost is a hidden trait) | Escort, Vigilante |
 | Unique evil roles | – | Godfather |
+| Special | Cultist (good, turns into a werewolf) | Corrupt (neutral, chooses a side) |
 | Core loop, win conditions, vote | identical | identical |
 
 ## Variant choices (fixed on purpose)

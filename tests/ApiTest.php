@@ -465,3 +465,42 @@ T::test('api: create accepts, stores and shows the ghost count; rejects too many
     T::same(200, $s);
     rmTree($dir);
 });
+
+T::test('api: the corrupt chooses a side via cmd; second time, wrong role and invalid side are 400', function () {
+    $clock = new Clock();
+    [$store, $dir] = tmpStore($clock);
+    $api = new Api($store, ['clock' => $clock, 'rng' => fn() => 0.5]);
+    [, $c] = $api->handle('create', [
+        'type' => 'mafia', 'name' => 'M', 'roles' => ['citizen' => 4, 'mafioso' => 1, 'corrupt' => 1], 'player' => ['name' => 'Host'],
+    ]);
+    $tokens = [$c['token']];
+    for ($i = 1; $i < 6; $i++) {
+        [, $j] = $api->handle('join', ['id' => $c['id'], 'player' => ['name' => "P$i"]]);
+        $tokens[] = $j['token'];
+    }
+    $cmd = fn(string $tok, array $body) => $api->handle('cmd', ['id' => $c['id'], 'token' => $tok, 'cmd' => $body]);
+    [$s] = $cmd($tokens[0], ['t' => 'side', 'side' => 'good']);
+    T::same(400, $s); // lobby
+    [$s] = $cmd($tokens[0], ['t' => 'start']);
+    T::same(200, $s);
+    $roles = [];
+    foreach ($tokens as $t) {
+        [, $r] = $api->handle('state', ['id' => $c['id'], 'token' => $t, 'v' => -1]);
+        $roles[$t] = $r['state']['me']['role'];
+    }
+    $corrupt = array_search('corrupt', $roles, true);
+    $other = array_search('citizen', $roles, true);
+    [$s] = $cmd($other, ['t' => 'side', 'side' => 'good']);
+    T::same(400, $s);
+    [$s] = $cmd($corrupt, ['t' => 'side', 'side' => 'bogus']);
+    T::same(400, $s);
+    [$s, $r] = $cmd($corrupt, ['t' => 'side', 'side' => 'evil']);
+    T::same(200, $s);
+    T::same('evil', $r['state']['me']['side']);
+    [$s, $r] = $cmd($corrupt, ['t' => 'side', 'side' => 'good']);
+    T::same(400, $s);
+    T::matches('/already chose/', $r['error']);
+    [, $r] = $api->handle('state', ['id' => $c['id'], 'token' => $other, 'v' => -1]);
+    T::true(!array_key_exists('side', $r['state']['me']));
+    rmTree($dir);
+});

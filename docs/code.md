@@ -25,7 +25,7 @@ Typical play request: `room.js poll()` → `api.js pollState` → `api.php` → 
 | `delete` | POST | `id, token` | `{deleted:true}` (host only) | `Api::deleteGame` → `Store::remove` |
 | `cmd` | POST | `id, token, cmd{t,…}` | `{state}` (or `{left:true}`) | `Api::command` → `Game::command` |
 
-Game commands (`cmd.t`): `start` (host, ≥4 players), `settings{…create payload…}` (host, lobby), `profile{name,avatar?}` (any player, any phase; avatar absent = keep, null = remove, data URL = replace), `kick{playerId}`, `leave`, `chat{text,to?}` (`to` = private message), `ready`, `skip` (host: discussion, vote, night, hunter), `vote{target|null}`, `action{target}` / `action{confirm:true}` (evil kill: suggest, then confirm) / `action{heal,poison}`.
+Game commands (`cmd.t`): `start` (host, ≥4 players), `settings{…create payload…}` (host, lobby), `profile{name,avatar?}` (any player, any phase; avatar absent = keep, null = remove, data URL = replace), `kick{playerId}`, `leave`, `chat{text,to?}` (`to` = private message), `ready`, `skip` (host: discussion, vote, night, hunter), `side{side}` (alive player whose role has `allegiance: choose`, once; phases discussion/vote/night/hunter), `vote{target|null}`, `action{target}` / `action{confirm:true}` (evil kill: suggest, then confirm) / `action{heal,poison}`.
 Errors: `{error}` with HTTP 400 (`GameError`) or 500.
 
 ## PHP (`src/`, namespace `Wm`)
@@ -39,13 +39,13 @@ Errors: `{error}` with HTTP 400 (`GameError`) or 500.
 | `Store.php` | One JSON file per game: `create`, `peek`, `mutate` (flock + atomic write), `remove` (guarded delete under the lock), `expired` (retention rule: ended +2 days, idle 7 days), `peekLive` (peek hiding expired games), `discard` (delete under lock), private `lock()`, `sweep`, `validId` |
 | `Seo.php` | `PAGES` (indexable pages: title, description, `updated`), `head()` (meta, canonical, Open Graph, JSON-LD; noindex for private views), `robots()`, `sitemap()`, `origin()`/`url()` from the request |
 | `Rules.php` | `Rules::html(bool $links)`: rules/character guide as trusted escaped HTML; single source for `/how-to-play` and the popup (values from `Config`, roles from `Games`) |
-| `Games.php` | Registry of game ids, `get`, `publicList` (role data incl. `cap`, `legacy`, `knowsEachOther`, `ghost` = {name,icon,desc,min,max,def,cap}) |
+| `Games.php` | Registry of game ids, `get`, `publicList` (role data incl. `cap`, `legacy`, `knowsEachOther`, `allegiance`, `goal`, `convert` (bool), `ghost` = {name,icon,desc,min,max,def,cap}) |
 | `GameError.php` | Exception whose message is shown to players |
 | `games/werewolf.php`, `games/mafia.php` | Data-only definitions: teams, narration strings, roles |
 
 Evil kill: `action` stores suggestions, `agreedTarget` and `teamChoices` (view) drive the confirm step; ghost trait: `ghostSlot` in player state, count from setting `ghosts` (null in old saves), `hauntSpec`; `Config::RANGES` is public; `heldLog` + `flushHeld` hold the Hunter-shoots-Hunter log line; `endedAt` feeds `Store::expired`.
 
-Key `Game` methods: `command` (router) · `composition` (dealt/pool split) · `joinable`, `addPlayer`, `drawLateRole` (late join) · `configure` (host `settings`) · `updateProfile` · `enter` (phase entry) · `tick`/`advance` (timers) · `action`, `actorsForStep`, `canAct`, `usesLeft`, `advanceNight`, `applyNightEffects`, `finishNight` (night, 3 steps) · `chatChannel`, `chatMessage` (channels, DMs, retention), `storyLog` (end-of-game log with chat), `canDelete` · `vote`, `resolveVote` · `kill`, `afterDeaths`, `finishHunter`, `checkWin` · `viewFor`, `actionFor`, `canSeeRole` (what a player may see).
+Key `Game` methods: `command` (router) · `composition` (dealt/pool split) · `joinable`, `addPlayer`, `drawLateRole` (late join) · `configure` (host `settings`) · `updateProfile` · `enter` (phase entry) · `tick`/`advance` (timers) · `action`, `actorsForStep`, `canAct`, `usesLeft`, `advanceNight`, `applyNightEffects`, `finishNight` (night, 3 steps) · `chatChannel`, `chatMessage` (channels, DMs, retention), `storyLog` (end-of-game log with chat), `canDelete` · `vote`, `resolveVote` · `kill`, `afterDeaths`, `finishHunter`, `checkWin` · `sideOf` (side whose win counts for the player), `dealtRole`, `chooseSide` (command `side`), `convertPlayer` (Cultist turn, from `applyNightEffects`) · `viewFor`, `actionFor`, `canSeeRole` (what a player may see; honours `mutualWith`). `viewFor` adds `me.side` (own, `choose` roles only) and, after the end, `me.won` and `players[].won`.
 
 ## JavaScript (`public/js`)
 | File | Responsibility |
@@ -57,10 +57,10 @@ Key `Game` methods: `command` (router) · `composition` (dealt/pool split) · `j
 | `avatar.js` | Image → 96 px JPEG (`fileToAvatar`, `canvasToAvatar`), camera dialog (`takePhotoDialog`/`closePhotoDialog`, file-input fallback), avatar HTML, profile form |
 | `util.js` | `esc`, `toast`, `setHtml` (skip unchanged HTML), `$` |
 | `views/home.js` | Choose game, join by code, saved games (Rejoin / Remove: host deletes via `deleteGame`, others forget locally) |
-| `views/setup.js` | `buildSetupForm`: shared setup form (name, description, role counts with caps mirrored from `Config::capFor`, ghost count row `.ghost-name`, timers), used by create and the room's host settings |
+| `views/setup.js` | `buildSetupForm` (cultist shown with the red evil name, neutral count in the summary): shared setup form (name, description, role counts with caps mirrored from `Config::capFor`, ghost count row `.ghost-name`, timers), used by create and the room's host settings |
 | `views/create.js` | Create page: profile + setup form |
 | `views/join.js` | Join form for QR links |
-| `views/room.js` | Lobby (host settings, avatars) + game UI (night action, hunter shot and vote as `role=dialog` popups; "It is night…" for non-actors; evil kill suggest/confirm UI), "My profile" editor, polling loop, command sending |
+| `views/room.js` | Lobby (host settings, avatars) + game UI (night action, hunter shot and vote as `role=dialog` popups; "It is night…" for non-actors; evil kill suggest/confirm UI; `sidePanel` with `data-side` buttons for the Corrupt; end banner from `me.won`), "My profile" editor, polling loop, command sending |
 | `vendor/qrcode.js` | Vendored `qrcode-generator` 2.0.4 (MIT) |
 | `css/app.css` | All styles (light/dark via `prefers-color-scheme`) |
 
@@ -72,7 +72,7 @@ No database. `data/<ID>.json` + `data/<ID>.lock` written by `Store`; layout of t
 |---|---|
 | `run.php` | Runner (`php tests/run.php [name-filter]`) |
 | `bootstrap.php` | `T` assertions, `Clock`, `startedGame()`, `toNight()`, `act()` |
-| `EngineTest.php` | Rules: config, phases, night, vote, win, hunter, witch, escort, vigilante, visibility, chat, lazy timers, optional timers, composition/pool, late join, host settings, delete, DMs, story chat, paladin, ghost trait (host-set count), rules popup/API, kill agreement, hunter vs hunter, caps, retention, profile, serialisation |
+| `EngineTest.php` | Rules: config, phases, night, vote, win, hunter, witch, escort, vigilante, visibility, chat, lazy timers, optional timers, composition/pool, late join, host settings, delete, DMs, story chat, paladin, cultist conversion, corrupt/neutral side, ghost trait (host-set count), rules popup/API, kill agreement, hunter vs hunter, caps, retention, profile, serialisation |
 | `ApiTest.php` | API + storage: create/join/poll/commands, delete, avatars, unchanged polls, lazy timers, id validation, sweep |
 | `SeoTest.php` | `Seo`: title/description lengths, indexable vs noindex head, JSON-LD, sitemap and robots |
 Naming: `T::test('what it proves', fn)`; one behaviour per test.
@@ -93,6 +93,7 @@ Naming: `T::test('what it proves', fn)`; one behaviour per test.
 | Change evil-kill agreement / Paladin / Witch / ghost trait | `Game::action`, `agreedTarget`, `applyNightEffects`, `hauntSpec`, `viewFor`; `room.js` popups |
 | Change early-start / late-join rules | `Game::composition`, `joinable`, `drawLateRole`, `docs/rules.md`, `EngineTest.php` |
 | Change chat channels / DMs / story replay | `Game::chatChannel`, `chatMessage`, `storyLog`, `viewFor`, `Config::normalize` |
+| Add a role that converts, has its own allegiance or is neutral | flags `allegiance`, `convert`, `mutualWith`, `goal` in `src/games/*.php`; `Game::sideOf`, `convertPlayer`, `chooseSide`, `checkWin`, `composition`; tests |
 | Change what a player may see | `Game::viewFor`, `canSeeRole`, `actionFor` |
 | Add an API action | `Api::dispatch` + handler, `api.js` wrapper, `ApiTest.php`, table above |
 | Add a game command | `Game::command` switch + method, handler in `room.js` click listener, test |

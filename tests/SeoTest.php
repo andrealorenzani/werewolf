@@ -57,5 +57,16 @@ T::test('seo: how-to-play lists current roles, the ghost trait and the night tim
     T::true(str_contains($html, '30 to 90 second timer') && str_contains($html, 'always on'), 'night timer');
     T::true(!str_contains($html, 'Timers are optional'), 'old copy removed');
     T::true(str_contains($html, 'Last updated ' . Seo::PAGES['/how-to-play']['updated']), 'updated date shown');
-    T::same('2026-10-17', Seo::PAGES['/how-to-play']['updated']);
+    T::same('2026-10-18', Seo::PAGES['/how-to-play']['updated']);
+});
+
+T::test('seo: how-to-play explains the Cultist and the Corrupt', function () {
+    $_SERVER['HTTP_HOST'] = 'example.test';
+    $_SERVER['SCRIPT_NAME'] = '/how-to-play.php';
+    ob_start();
+    require __DIR__ . '/../public/how-to-play.php';
+    $html = (string)ob_get_clean();
+    T::true(str_contains($html, '<strong>🕯️ Cultist</strong>'), 'cultist listed');
+    T::true(str_contains($html, '<strong>🤝 Corrupt</strong>'), 'corrupt listed');
+    T::true(str_contains($html, 'Neutral players'), 'neutral explained in how to win');
 });

@@ -2,6 +2,13 @@
 
 Newest first. Maintained by the `documenter` agent for every player- or developer-visible change.
 
+## 2026-10-18
+### Added
+- Werewolf **Cultist** (looks good, wins with the werewolves): turned into a werewolf instead of dying when the werewolves kill him; healed/shielded/protected means no turn; another lethal source the same night just kills him; a same-night poison on him is void and not spent (the Witch is told). Wolves are told he joined; he reads wolf chat only from the turn onward; ghost slot cleared. Counted as good by the Seer, Ghost, parity and Paladin charges; wins with the werewolves even when dead; loses if the last wolf dies unturned. Cap one per werewolf; red name in setup. Known trade-off: setup counts him as good for "villagers must outnumber werewolves".
+- Mafia **Corrupt** (neutral): picks Town or Mafia once with the new `side` command (discussion, vote, night, hunter, while alive); never choosing means losing. Knows and is known by mafioso/godfather/detective/vigilante (`mutualWith`); the side stays private until the end.
+- Neutral team support: role flags `allegiance`, `convert`, `mutualWith`, `goal`; `Game::sideOf`, `dealtRole`, `chooseSide`, `convertPlayer`; `state['was'|'side'|'turnedAt']`. Neutral players are excluded from the parity check; neutral cards are dealt only while real good still outnumber evil (composition, late join). `Games::publicList` exposes `allegiance`, `goal`, `convert`; `/how-to-play` and the rules popup list the new characters.
+- Per-player end result: views carry `won` (`me.won`, `players[].won`) after the game ends; the end banner uses it.
+
 ## 2026-10-17
 ### Added
 - In-game rules popup: `Rules::html()` (`src/Rules.php`) is the single source for `/how-to-play` and the popup; public GET API action `rules` -> `{html}`; `public/js/rules.js` (`openRules`, `bindRulesLinks`, `closeRules`; overlay above the modal, accessible, closed on route change); `api.js` `fetchRules` (cached); "How to play" links in the home, create and room headers (real relative links to how-to-play).

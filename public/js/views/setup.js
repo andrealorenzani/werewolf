@@ -64,7 +64,7 @@ export function buildSetupForm(def, initial, onChange = () => {}) {
       <div class="role-grid">${roles.map((r) => `
         <div class="role-row">
           <span style="font-size:1.8rem">${r.icon}</span>
-          <div class="info"><b class="team-${r.team}">${esc(r.name)}</b><span class="muted small">${esc(r.desc)}</span>
+          <div class="info"><b class="team-${r.allegiance === 'evil' ? 'evil' : r.team}">${esc(r.name)}</b><span class="muted small">${esc(r.desc)}</span>
             <span class="small cap-note" data-cap-note="${r.id}"></span></div>
           <div class="stepper"><button type="button" data-dec="${r.id}" aria-label="Fewer ${esc(r.name)}">−</button>
             <output data-count="${r.id}"></output><button type="button" data-inc="${r.id}" aria-label="More ${esc(r.name)}">+</button></div>
@@ -101,13 +101,13 @@ export function buildSetupForm(def, initial, onChange = () => {}) {
   const roleOf = (id) => def.roles.find((r) => r.id === id);
 
   function validate() {
-    let total = 0, good = 0, evil = 0;
+    let total = 0, good = 0, evil = 0, neutral = 0;
     const over = [];
     for (const r of roles) {
       const cap = capFor(def, r, counts);
       q(`[data-count="${r.id}"]`).textContent = counts[r.id];
       total += counts[r.id];
-      if (r.team === 'evil') evil += counts[r.id]; else good += counts[r.id];
+      if (r.team === 'evil') evil += counts[r.id]; else if (r.team === 'neutral') neutral += counts[r.id]; else good += counts[r.id];
       const atCap = counts[r.id] >= cap;
       q(`[data-inc="${r.id}"]`).disabled = atCap;
       q(`[data-dec="${r.id}"]`).disabled = counts[r.id] <= (r.min ?? 0);
@@ -128,7 +128,7 @@ export function buildSetupForm(def, initial, onChange = () => {}) {
     q('[data-total]').textContent = `${total} players`;
     const problem = over.length ? `${over[0]}.` : total < 4 ? 'At least 4 players are needed.' : evil < 1 ? `Add at least one ${def.teams.evil.name}.`
       : good <= evil ? `${def.teams.good.name} must outnumber ${def.teams.evil.name}.` : '';
-    q('[data-check]').textContent = problem || `${good} ${def.teams.good.name} vs ${evil} ${def.teams.evil.name}`;
+    q('[data-check]').textContent = problem || `${good} ${def.teams.good.name} vs ${evil} ${def.teams.evil.name}${neutral ? ` (+${neutral} neutral)` : ''}`;
     return problem;
   }
 

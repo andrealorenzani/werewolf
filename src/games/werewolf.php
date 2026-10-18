@@ -62,5 +62,11 @@ return [
         ['id' => 'hunter', 'name' => 'Hunter', 'team' => 'good', 'icon' => '🏹', 'max' => 10, 'def' => 0, 'cap' => ['count' => 'werewolf'],
             'desc' => 'When you die, for any reason, you immediately shoot one player of your choice. Hunters do not know each other.',
             'onDeath' => 'shoot'],
+        // Plays for the good team until the werewolves attack him: then he is turned into a werewolf instead of dying.
+        // `allegiance` = the side whose victory is his own (the werewolves), even while he still counts as good.
+        ['id' => 'cultist', 'name' => 'Cultist', 'team' => 'good', 'icon' => '🕯️', 'max' => 10, 'def' => 0, 'cap' => ['count' => 'werewolf'],
+            'allegiance' => 'evil', 'convert' => ['by' => 'kill', 'into' => 'werewolf'],
+            'goal' => 'Help the werewolves win. You look like a villager, even to the Seer, until they attack you: then you join them instead of dying.',
+            'desc' => 'You secretly serve the werewolves but have no power and do not know them. You count as a villager until the werewolves choose you as their victim: you then survive and become a werewolf. If you are voted out first, you still win with the werewolves.'],
     ],
 ];

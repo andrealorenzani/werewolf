@@ -41,23 +41,30 @@ final class Rules
     </ol>
 
     <h2>How to win</h2>
-    <p>The good team wins when no evil player is left alive. The evil team wins when living evil players are at least as many as living good players.</p>
+    <p>The good team wins when no evil player is left alive. The evil team wins when living evil players are at least as many as living good players. Neutral players (the Corrupt in Mafia) are counted for neither team: they pick a side during the game and win or lose with it. A Cultist in Werewolf counts as a villager until the werewolves attack him, then he turns into a werewolf instead of dying; he wins with the werewolves, even if he is eliminated before turning.</p>
 
     <h2>Setup</h2>
-    <p>Games need {$min} to {$max} players. The host chooses how many of each character to include, and can start as soon as {$min} players have joined. Late players can still join while seats remain. The night timer is always on ({$nd} seconds by default, {$nmin} to {$nmax} allowed); discussion ({$dr[0]} to {$dr[1]} seconds) and vote ({$vr[0]} to {$vr[1]} seconds) timers are optional. The number of werewolves, witches, paladins and hunters is limited by the table size, so the game stays balanced.{$h($ghostNote)}</p>
+    <p>Games need {$min} to {$max} players. The host chooses how many of each character to include, and can start as soon as {$min} players have joined. Late players can still join while seats remain. The night timer is always on ({$nd} seconds by default, {$nmin} to {$nmax} allowed); discussion ({$dr[0]} to {$dr[1]} seconds) and vote ({$vr[0]} to {$vr[1]} seconds) timers are optional. The number of werewolves, witches, paladins, hunters and cultists is limited by the table size, so the game stays balanced.{$h($ghostNote)}</p>
 
 HTML;
         foreach (Games::publicList() as $g) {
             $o .= "\n    <section id=\"{$h($g['id'])}\">\n"
                 . "      <h2>{$h($g['icon'])} {$h($g['title'])} characters</h2>\n"
                 . "      <p>{$h($g['tagline'])} <strong>{$h($g['teams']['good']['name'])}:</strong> {$h($g['teams']['good']['goal'])} "
-                . "<strong>{$h($g['teams']['evil']['name'])}:</strong> {$h($g['teams']['evil']['goal'])}</p>\n      <ul>\n";
+                . "<strong>{$h($g['teams']['evil']['name'])}:</strong> {$h($g['teams']['evil']['goal'])}"
+                . (isset($g['teams']['neutral']) ? " <strong>{$h($g['teams']['neutral']['name'])}:</strong> {$h($g['teams']['neutral']['goal'])}" : '')
+                . "</p>\n      <ul>\n";
             foreach ($g['roles'] as $r) {
                 if ($r['legacy']) {
                     continue;
                 }
-                $o .= "        <li><strong>{$h($r['icon'])} {$h($r['name'])}</strong> (" . ($r['team'] === 'evil' ? 'evil' : 'good')
-                    . "): {$h($r['desc'])}</li>\n";
+                $label = $r['team'];
+                if ($r['allegiance'] === 'choose') {
+                    $label = 'neutral, wins with the side it chooses';
+                } elseif ($r['allegiance'] !== null && $r['allegiance'] !== $r['team']) {
+                    $label .= ', wins with the ' . $g['teams'][$r['allegiance']]['name'] . ' team';
+                }
+                $o .= "        <li><strong>{$h($r['icon'])} {$h($r['name'])}</strong> ({$h($label)}): {$h($r['desc'])}</li>\n";
             }
             $o .= "      </ul>\n";
             if ($g['ghost']) {

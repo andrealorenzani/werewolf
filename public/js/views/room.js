@@ -146,7 +146,7 @@ export async function openRoom(app, gameId, navigate) {
     let html = '';
     if (state.phase === 'ended') {
       const team = def.teams[state.winner];
-      const won = state.me.team === state.winner;
+      const won = state.me.won;
       html = `<div class="panel winner-banner team-${state.winner}">🏆 ${esc(team.name)} win! <span class="muted">${won ? 'You won!' : 'You lost.'}</span></div>`;
     }
     const g = state.me.ghost;
@@ -172,13 +172,25 @@ export async function openRoom(app, gameId, navigate) {
     const r = roleDef(me.role);
     if (!r) return setHtml(el, '');
     const status = me.alive ? '' : '<p class="error">You are out of the game. You can still watch and chat with other eliminated players.</p>';
+    const look = r.allegiance === 'evil' ? 'evil' : r.team; // a cultist is red although he counts as good
+    const side = r.allegiance === 'choose' ? sidePanel(r, me) : '';
     setHtml(el, showRole
-      ? `<div class="panel role-card ${r.team}" data-toggle-role title="Tap to hide"><div class="icon">${r.icon}</div><h2>${esc(r.name)}</h2>
-         <div class="team-${r.team}">${esc(def.teams[r.team].name)}</div><p class="muted">${esc(r.desc)}</p>
-         <p class="small muted">Goal: ${esc(def.teams[r.team].goal)}</p>${status}</div>`
+      ? `<div class="panel role-card ${look}" data-toggle-role title="Tap to hide"><div class="icon">${r.icon}</div><h2>${esc(r.name)}</h2>
+         <div class="team-${look}">${esc(def.teams[look].name)}</div><p class="muted">${esc(r.desc)}</p>
+         <p class="small muted">Goal: ${esc(r.goal ?? def.teams[r.team].goal)}</p>${status}</div>${side}`
       : `<div class="panel role-card hidden" data-toggle-role><div class="icon">🂠</div><h2>Your character</h2><p class="muted">Tap to reveal (make sure no one is looking)</p>${status}</div>`);
   }
 
+
+  /** The Corrupt picks a side (final); afterwards only a reminder. Buttons live outside the reveal card. */
+  function sidePanel(r, me) {
+    if (state.phase === 'ended') return '';
+    const sides = Object.keys(def.teams).filter((k) => k !== r.team);
+    if (me.side) return `<div class="panel small">You sided with <b class="team-${esc(me.side)}">${esc(def.teams[me.side].name)}</b>.</div>`;
+    if (!me.alive || state.phase === 'lobby') return '';
+    return `<div class="panel stack"><p class="small muted">Choose a side: you win or lose with it. The choice is final.</p>
+      <div class="row">${sides.map((k) => `<button type="button" data-side="${esc(k)}">Side with ${esc(def.teams[k].name)}</button>`).join('')}</div></div>`;
+  }
 
   /** The inline action panel: discussion button, status lines. Night actions, the hunter shot and the vote live in the popup. */
   function renderAction() {
@@ -507,10 +519,11 @@ export async function openRoom(app, gameId, navigate) {
 
   // ---------- events ----------
   app.addEventListener('click', (e) => {
-    const t = e.target.closest('[data-toggle-role],[data-ready],[data-skip],[data-abstain],[data-target],[data-confirm],[data-vote-confirm],[data-wolf-confirm],[data-open-vote],[data-m-close],[data-pass],[data-witch],[data-guard],[data-start],[data-copy],[data-kick],[data-leave],[data-home],[data-edit-settings],[data-edit-profile]');
+    const t = e.target.closest('[data-toggle-role],[data-side],[data-ready],[data-skip],[data-abstain],[data-target],[data-confirm],[data-vote-confirm],[data-wolf-confirm],[data-open-vote],[data-m-close],[data-pass],[data-witch],[data-guard],[data-start],[data-copy],[data-kick],[data-leave],[data-home],[data-edit-settings],[data-edit-profile]');
     if (!t) return;
     const d = t.dataset;
     if ('toggleRole' in d) { showRole = !showRole; renderRole(); }
+    else if ('side' in d) send({ t: 'side', side: d.side });
     else if ('ready' in d) send({ t: 'ready' });
     else if ('skip' in d) send({ t: 'skip' });
     else if ('abstain' in d) send({ t: 'vote', target: null });

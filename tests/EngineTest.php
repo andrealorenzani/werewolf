@@ -4,6 +4,7 @@ declare(strict_types=1);
 use Wm\Config;
 use Wm\Game;
 use Wm\Games;
+use Wm\Player;
 
 const WW = ['werewolf', 'villager', 'villager', 'villager', 'seer', 'villager'];
 
@@ -606,7 +607,7 @@ T::test('settings command updates the story chat flags, visible in the view', fu
 
 T::test('werewolf role table: no doctor, ghost and paladin after the seer, witch acts in step 2', function () {
     $roles = Games::get('werewolf')['roles'];
-    T::same(['villager', 'werewolf', 'seer', 'ghost', 'paladin', 'witch', 'hunter'], array_column($roles, 'id'));
+    T::same(['villager', 'werewolf', 'seer', 'ghost', 'paladin', 'witch', 'hunter', 'cultist'], array_column($roles, 'id'));
     T::same(['ghost'], array_column(array_filter($roles, fn($r) => !empty($r['legacy'])), 'id'));
     $by = array_column($roles, null, 'id');
     T::same('guard', $by['paladin']['night']['kind']);
@@ -1997,4 +1998,494 @@ T::test('hunters: a hunter killing a non-hunter logs the shot at once; a held li
     T::same(2, count($shots));
     T::same(SHOT_AB, $shots[0]);
     T::matches('/^p3 fired a last shot and killed p0\./', $shots[1]);
+});
+
+// ---------- Cultist (Werewolf) and Corrupt (Mafia) ----------
+const CULT6 = ['werewolf', 'cultist', 'villager', 'villager', 'villager', 'villager'];
+
+/** Skip night steps until it is day (nobody acts further). */
+function skipNight(Game $g, Player $host): void
+{
+    for ($i = 0; $i < 6 && $g->phase === 'night'; $i++) {
+        $g->command($host->id, ['t' => 'skip']);
+    }
+}
+
+/** Day -> vote in which everybody else votes for $target; he votes for the first other player. */
+function voteOut(Game $g, array $ps, Player $target): void
+{
+    for ($i = 0; $i < 8 && $g->phase !== 'vote'; $i++) {
+        $g->command($ps[0]->id, ['t' => 'skip']); // day 0 / night steps / discussion -> vote
+    }
+    $other = null;
+    foreach ($ps as $p) {
+        if ($p->alive && $p->id !== $target->id) {
+            $other ??= $p;
+        }
+    }
+    foreach ($ps as $p) {
+        if ($p->alive && $g->phase === 'vote') {
+            $g->command($p->id, ['t' => 'vote', 'target' => $p->id === $target->id ? $other->id : $target->id]);
+        }
+    }
+}
+
+function noteTexts(Player $p): array
+{
+    return array_column($p->notes, 'text');
+}
+
+T::test('cultist: the werewolves attack him and he turns into a werewolf instead of dying', function () {
+    [$g, $ps] = startedGame('werewolf', CULT6);
+    toNight($g, $ps);
+    killAct($g, $ps[0], $ps[1]);
+    T::same('discussion', $g->phase);
+    T::true($ps[1]->alive);
+    T::same('werewolf', $ps[1]->role);
+    T::same('cultist', $ps[1]->state['was']);
+    T::same('Nobody was killed during the night.', dawn($g));
+    T::same(1, count($ps[1]->notes));
+    T::matches('/you are now a Werewolf/', noteTexts($ps[1])[0]);
+    T::matches('/p1 was a Cultist/', noteTexts($ps[0])[0]);
+    T::same([], $ps[2]->notes); // villagers learn nothing
+    T::same([], array_filter($g->log, fn($e) => $e['type'] === 'death'));
+    T::same('werewolf', $g->viewFor($ps[1]->id)['me']['role']);
+    T::same('evil', $g->viewFor($ps[1]->id)['me']['team']);
+});
+
+T::test('cultist: a normal victim still dies; an unattacked cultist stays a cultist', function () {
+    [$g, $ps] = startedGame('werewolf', CULT6);
+    toNight($g, $ps);
+    killAct($g, $ps[0], $ps[2]);
+    T::false($ps[2]->alive);
+    T::same('cultist', $ps[1]->role);
+    T::same([], $ps[1]->notes);
+});
+
+T::test('cultist: same-night poison and wolf kill cancel each other: he turns and nobody dies', function () {
+    [$g, $ps] = startedGame('werewolf', ['werewolf', 'cultist', 'witch', 'villager', 'villager', 'villager']);
+    toNight($g, $ps);
+    killAct($g, $ps[0], $ps[1]);
+    act($g, $ps[2], ['poison' => $ps[1]->id]);
+    T::same('discussion', $g->phase);
+    T::true($ps[1]->alive);
+    T::same('werewolf', $ps[1]->role);
+    T::same('Nobody was killed during the night.', dawn($g));
+    T::true(empty($ps[2]->state['poisonUsed']), 'the voided poison is not spent');
+    T::matches('/not poisoned/', noteTexts($ps[2])[0]);
+    T::true(!str_contains(implode(' ', noteTexts($ps[2])), 'You poisoned'));
+    // and she can still use it the next night
+    nextNight($g, $ps);
+    killAct($g, [$ps[0], $ps[1]], $ps[3]);
+    act($g, $ps[2], ['poison' => $ps[4]->id]);
+    T::false($ps[4]->alive);
+    T::true(!empty($ps[2]->state['poisonUsed']));
+});
+
+T::test('cultist: if something else kills him the same night (vigilante-style shot) he dies and does not turn', function () {
+    [$g, $ps] = startedGame('mafia', ['mafioso', 'vigilante', 'citizen', 'citizen', 'citizen']);
+    // Werewolf has no shooter: use a custom convertible role through the data of the game under test
+    $def = new ReflectionProperty(Game::class, 'def');
+    $d = $def->getValue($g);
+    foreach ($d['roles'] as &$r) {
+        if ($r['id'] === 'citizen') {
+            $r['convert'] = ['by' => 'kill', 'into' => 'mafioso'];
+        }
+    }
+    unset($r);
+    $def->setValue($g, $d);
+    toNight($g, $ps);
+    killAct($g, $ps[0], $ps[2]);
+    act($g, $ps[1], ['target' => $ps[2]->id]);
+    T::false($ps[2]->alive);
+    T::same('citizen', $ps[2]->role);
+    T::same([], $ps[0]->notes);
+    // a poison on the victim is spent when he is not turned
+    [$g, $ps] = startedGame('werewolf', ['werewolf', 'cultist', 'witch', 'villager', 'villager', 'villager']);
+    toNight($g, $ps);
+    killAct($g, $ps[0], $ps[3]);
+    act($g, $ps[2], ['poison' => $ps[1]->id]);
+    T::true(!empty($ps[2]->state['poisonUsed']));
+});
+
+T::test('cultist: a converted player does not read the pack chat written before he turned', function () {
+    [$g, $ps] = startedGame('werewolf', ['werewolf', 'werewolf', 'cultist', 'villager', 'villager', 'villager', 'villager', 'villager']);
+    toNight($g, $ps);
+    $g->command($ps[0]->id, ['t' => 'chat', 'text' => 'secret plan']);
+    T::same(1, count(array_filter($g->viewFor($ps[1]->id)['chat'], fn($m) => $m['ch'] === 'evil')));
+    killAct($g, [$ps[0], $ps[1]], $ps[2]);
+    T::same('werewolf', $ps[2]->role);
+    nextNight($g, $ps);
+    T::same([], array_filter($g->viewFor($ps[2]->id)['chat'], fn($m) => $m['ch'] === 'evil'));
+    $g->command($ps[0]->id, ['t' => 'chat', 'text' => 'welcome']);
+    $seen = array_values(array_filter($g->viewFor($ps[2]->id)['chat'], fn($m) => $m['ch'] === 'evil'));
+    T::same(['welcome'], array_column($seen, 'text'));
+    T::same(2, count(array_filter($g->viewFor($ps[0]->id)['chat'], fn($m) => $m['ch'] === 'evil')));
+});
+
+T::test('composition: neutral cards never break the real good > evil guarantee (early start and late join)', function () {
+    $roles = ['citizen' => 1, 'mafioso' => 2, 'corrupt' => 1, 'detective' => 1, 'doctor' => 1];
+    [$g] = lobby('mafia', $roles, 6);
+    for ($n = 4; $n <= 6; $n++) {
+        $comp = $g->composition($n);
+        T::same($n, count($comp['dealt']));
+        $team = fn($id) => Games::get('mafia')['roles'][array_search($id, array_column(Games::get('mafia')['roles'], 'id'), true)]['team'];
+        $evil = count(array_filter($comp['dealt'], fn($id) => $team($id) === 'evil'));
+        $good = count(array_filter($comp['dealt'], fn($id) => $team($id) === 'good'));
+        T::true($good > $evil, "n=$n good $good evil $evil");
+    }
+    // late joiner: no neutral card when good would not outnumber evil
+    [$g, $ps] = startedGame('mafia', ['mafioso', 'citizen', 'citizen', 'citizen']);
+    $ps[1]->role = 'mafioso'; // 2 evil vs 2 good
+    $g->total++;
+    $g->pool = ['corrupt'];
+    $late = $g->addPlayer(['name' => 'late']);
+    T::same('citizen', $late->role);
+    // with real good ahead the corrupt may be drawn
+    [$g, $ps] = startedGame('mafia', ['mafioso', 'citizen', 'citizen', 'citizen']);
+    $g->total++;
+    $g->pool = ['corrupt'];
+    T::same('corrupt', $g->addPlayer(['name' => 'late'])->role);
+});
+
+T::test('cultist: a poison alone kills him, and he does not turn', function () {
+    [$g, $ps] = startedGame('werewolf', ['werewolf', 'cultist', 'witch', 'villager', 'villager', 'villager']);
+    toNight($g, $ps);
+    killAct($g, $ps[0], $ps[3]);
+    act($g, $ps[2], ['poison' => $ps[1]->id]);
+    T::false($ps[1]->alive);
+    T::same('cultist', $ps[1]->role);
+});
+
+T::test('cultist: healed or shielded, the attack is void and he does not turn', function () {
+    [$g, $ps] = startedGame('werewolf', ['werewolf', 'cultist', 'witch', 'villager', 'villager', 'villager']);
+    toNight($g, $ps);
+    killAct($g, $ps[0], $ps[1]);
+    act($g, $ps[2], ['heal' => true, 'poison' => null]);
+    T::true($ps[1]->alive);
+    T::same('cultist', $ps[1]->role);
+    T::same([], $ps[1]->notes);
+    [$g, $ps] = startedGame('werewolf', ['werewolf', 'cultist', 'paladin', 'villager', 'villager', 'villager']);
+    toNight($g, $ps);
+    killAct($g, $ps[0], $ps[1]);
+    act($g, $ps[2], ['save' => true]);
+    T::true($ps[1]->alive);
+    T::same('cultist', $ps[1]->role);
+    T::same([], $ps[1]->notes);
+});
+
+T::test('cultist: the Seer sees a villager before and on the conversion night, a werewolf afterwards', function () {
+    [$g, $ps] = startedGame('werewolf', ['werewolf', 'cultist', 'seer', 'villager', 'villager', 'villager']);
+    toNight($g, $ps);
+    act($g, $ps[2], ['target' => $ps[1]->id]);
+    killAct($g, $ps[0], $ps[1]);
+    T::same('werewolf', $ps[1]->role);
+    T::same('p1 is NOT a werewolf.', noteTexts($ps[2])[0]);
+    nextNight($g, $ps);
+    act($g, $ps[2], ['target' => $ps[1]->id]);
+    killAct($g, [$ps[0], $ps[1]], $ps[3]);
+    T::same('p1 IS a werewolf.', noteTexts($ps[2])[1]);
+    $g2 = startedGame('werewolf', ['werewolf', 'cultist', 'seer', 'villager', 'villager', 'villager'])[0];
+    T::same('good', $g2->teamOf($g2->players[1]));
+});
+
+T::test('cultist: ghosts treat him as good before and as evil after he turns', function () {
+    foreach ([true, false] as $turned) {
+        [$g, $ps] = ghostGame(['werewolf', 'cultist', 'witch', 'villager', 'villager', 'villager'], [3]);
+        setRng($g, 0.9); // a ghost that stays good: it points at evil players
+        toNight($g, $ps);
+        if ($turned) {
+            killAct($g, $ps[0], $ps[1]);
+            act($g, $ps[2], ['poison' => $ps[3]->id]); // the ghost holder dies of poison, the cultist turns
+        } else {
+            killAct($g, $ps[0], $ps[3]);
+            act($g, $ps[2], ['poison' => null]);
+        }
+        T::same('night', $g->phase);
+        $targets = $g->viewFor($ps[3]->id)['me']['action']['targets'];
+        T::same($turned, in_array($ps[1]->id, $targets, true));
+        T::true(in_array($ps[0]->id, $targets, true));
+    }
+});
+
+T::test('cultist: ghostSlot is cleared when he turns', function () {
+    [$g, $ps] = ghostGame(CULT6, [1]);
+    toNight($g, $ps);
+    killAct($g, $ps[0], $ps[1]);
+    T::true(!isset($ps[1]->state['ghostSlot']));
+    T::same('cultist', $ps[1]->state['was']);
+});
+
+T::test('cultist: paladin charges are counted by dealt role and do not change when he turns', function () {
+    [$g, $ps] = startedGame('werewolf', ['werewolf', 'cultist', 'paladin', 'villager', 'villager', 'villager']);
+    toNight($g, $ps);
+    killAct($g, $ps[0], $ps[1]);
+    T::same(1, $g->viewFor($ps[2]->id)['me']['action']['usesLeft']);
+    act($g, $ps[2], ['save' => false]);
+    T::same('werewolf', $ps[1]->role);
+    nextNight($g, $ps);
+    killAct($g, [$ps[0], $ps[1]], $ps[3]);
+    T::same(1, $g->viewFor($ps[2]->id)['me']['action']['usesLeft']);
+});
+
+T::test('cultist: once turned he kills with the pack, chats at night and sees the wolves', function () {
+    [$g, $ps] = startedGame('werewolf', CULT6);
+    T::true(!isset($g->viewFor($ps[0]->id)['players'][1]['role']));
+    T::true(!isset($g->viewFor($ps[1]->id)['players'][0]['role']));
+    toNight($g, $ps);
+    killAct($g, $ps[0], $ps[1]);
+    nextNight($g, $ps);
+    T::same([$ps[0]->id, $ps[1]->id], $g->night['actors']);
+    T::same('kill', $g->viewFor($ps[1]->id)['me']['action']['kind']);
+    $g->command($ps[1]->id, ['t' => 'chat', 'text' => 'hi pack']);
+    T::same('evil', end($g->chat)['ch']);
+    T::same(1, count(array_filter($g->viewFor($ps[0]->id)['chat'], fn($m) => $m['ch'] === 'evil')));
+    T::same(0, count(array_filter($g->viewFor($ps[2]->id)['chat'], fn($m) => $m['ch'] === 'evil')));
+    T::same('werewolf', $g->viewFor($ps[0]->id)['players'][1]['role']);
+    T::same('werewolf', $g->viewFor($ps[1]->id)['players'][0]['role']);
+    // suggest + confirm: both must agree
+    act($g, $ps[0], ['target' => $ps[2]->id]);
+    act($g, $ps[1], ['target' => $ps[3]->id]);
+    T::throws(fn() => act($g, $ps[0], ['confirm' => true]), '/not agreed/');
+    act($g, $ps[1], ['target' => $ps[2]->id]);
+    killAct($g, [$ps[0], $ps[1]], $ps[2]);
+    T::false($ps[2]->alive);
+});
+
+T::test('cultist: he cannot be targeted by the wolves as a teammate once turned', function () {
+    [$g, $ps] = startedGame('werewolf', CULT6);
+    toNight($g, $ps);
+    killAct($g, $ps[0], $ps[1]);
+    nextNight($g, $ps);
+    T::throws(fn() => act($g, $ps[0], ['target' => $ps[1]->id]), '/Invalid target/');
+});
+
+T::test('cultist: the last wolf dying with an unturned cultist is a good win, and he loses', function () {
+    [$g, $ps] = startedGame('werewolf', CULT6);
+    T::same('discussion', $g->phase);
+    voteOut($g, $ps, $ps[0]);
+    T::same('ended', $g->phase);
+    T::same('good', $g->winner);
+    $v = $g->viewFor($ps[2]->id);
+    T::same(true, $v['me']['won']);
+    T::same(false, $g->viewFor($ps[1]->id)['me']['won']);
+    $won = array_column($v['players'], 'won', 'id');
+    T::same(false, $won[$ps[0]->id]);
+    T::same(false, $won[$ps[1]->id]);
+    T::same(true, $won[$ps[2]->id]);
+});
+
+T::test('cultist: won/me.won exist only when the game has ended', function () {
+    [$g, $ps] = startedGame('werewolf', CULT6);
+    $v = $g->viewFor($ps[1]->id);
+    T::true(!array_key_exists('won', $v['me']));
+    T::true(!array_key_exists('won', $v['players'][0]));
+});
+
+T::test('cultist: evil wins with an unturned cultist and with a turned one: both won', function () {
+    [$g, $ps] = startedGame('werewolf', CULT6);
+    $ps[4]->alive = false;
+    $ps[5]->alive = false;
+    toNight($g, $ps);
+    killAct($g, $ps[0], $ps[2]);
+    voteOut($g, $ps, $ps[3]);
+    T::same('evil', $g->winner);
+    T::same(true, $g->viewFor($ps[1]->id)['me']['won']);
+    T::same(true, $g->viewFor($ps[0]->id)['me']['won']);
+    T::same(false, $g->viewFor($ps[3]->id)['me']['won']);
+    // turned
+    [$g, $ps] = startedGame('werewolf', ['werewolf', 'cultist', 'villager', 'villager', 'villager']);
+    toNight($g, $ps);
+    killAct($g, $ps[0], $ps[1]);
+    voteOut($g, $ps, $ps[2]);
+    T::same('evil', $g->winner);
+    T::same(true, $g->viewFor($ps[1]->id)['me']['won']);
+    T::same(false, $g->viewFor($ps[3]->id)['me']['won']);
+});
+
+T::test('cultist: a dead cultist keeps his side: he wins with the werewolves', function () {
+    [$g, $ps] = startedGame('werewolf', CULT6);
+    voteOut($g, $ps, $ps[1]); // the unturned cultist is voted out
+    T::false($ps[1]->alive);
+    T::same('night', $g->phase);
+    $ps[5]->alive = false;
+    $ps[4]->alive = false;
+    killAct($g, $ps[0], $ps[2]); // wolf + 1 villager left: evil wins
+    T::same('ended', $g->phase);
+    T::same('evil', $g->winner);
+    T::same(true, $g->viewFor($ps[1]->id)['me']['won']);
+    T::same(false, $g->viewFor($ps[3]->id)['me']['won']);
+});
+
+T::test('cultist: cap follows the number of werewolves in setup, composition and late draw', function () {
+    T::throws(fn() => wwCfg(['villager' => 5, 'werewolf' => 1, 'cultist' => 2]), '/At most 1 Cultist/');
+    T::same(2, wwCfg(['villager' => 5, 'werewolf' => 2, 'cultist' => 2])['roleCounts']['cultist']);
+    T::same(0, wwCfg(['villager' => 5, 'werewolf' => 1])['roleCounts']['cultist']);
+    [$g, $ps] = lobby('werewolf', ['villager' => 5, 'werewolf' => 2, 'cultist' => 2], 5);
+    $comp = $g->composition(5); // one werewolf dealt: at most one cultist
+    T::true(count(array_keys($comp['dealt'], 'cultist', true)) <= 1);
+    T::same(2, count(array_keys(array_merge($comp['dealt'], $comp['pool']), 'cultist', true)));
+    // a late joiner cannot draw a cultist beyond the cap
+    [$g, $ps] = startedGame('werewolf', CULT6);
+    $g->total++;
+    $g->pool = ['cultist'];
+    $late = $g->addPlayer(['name' => 'late']);
+    T::same('villager', $late->role);
+    T::same(['cultist'], $g->pool);
+});
+
+T::test('cultist: new state keys survive a save/load round trip', function () {
+    [$g, $ps] = startedGame('werewolf', CULT6);
+    toNight($g, $ps);
+    killAct($g, $ps[0], $ps[1]);
+    $copy = Game::fromArray(json_decode(json_encode($g->toArray()), true), ['rng' => fn() => 0.5]);
+    $c = $copy->player($ps[1]->id);
+    T::same('werewolf', $c->role);
+    T::same('cultist', $c->state['was']);
+    T::same('evil', $copy->sideOf($c));
+    T::same('evil', $copy->viewFor($c->id)['me']['team']);
+});
+
+T::test('cultist: Games::publicList exposes allegiance, goal and convert', function () {
+    $by = [];
+    foreach (Games::publicList() as $d) {
+        $by[$d['id']] = array_column($d['roles'], null, 'id');
+    }
+    T::same('evil', $by['werewolf']['cultist']['allegiance']);
+    T::same(true, $by['werewolf']['cultist']['convert']);
+    T::same(false, $by['werewolf']['seer']['convert']);
+    T::same('choose', $by['mafia']['corrupt']['allegiance']);
+    T::same('neutral', $by['mafia']['corrupt']['team']);
+    T::true(is_string($by['mafia']['corrupt']['goal']));
+    T::true(isset(Games::get('mafia')['teams']['neutral']['name']));
+});
+
+// ---- Corrupt ----
+const COR5 = ['mafioso', 'corrupt', 'citizen', 'citizen', 'citizen'];
+
+T::test('corrupt: choosing a side works in discussion, vote, night and hunter phases', function () {
+    foreach (['discussion', 'vote', 'night', 'hunter'] as $phase) {
+        [$g, $ps] = startedGame('mafia', COR5);
+        if ($phase === 'vote') {
+            $g->command($ps[0]->id, ['t' => 'skip']);
+            $g->command($ps[0]->id, ['t' => 'skip']);
+            skipNight($g, $ps[0]);
+            $g->command($ps[0]->id, ['t' => 'skip']);
+        } elseif ($phase === 'night') {
+            toNight($g, $ps);
+        } elseif ($phase === 'hunter') {
+            $g->phase = 'hunter';
+        }
+        T::same($phase, $g->phase);
+        $g->command($ps[1]->id, ['t' => 'side', 'side' => 'evil']);
+        T::same('evil', $ps[1]->state['side']);
+        T::same('evil', $g->viewFor($ps[1]->id)['me']['side']);
+        T::same(1, count($ps[1]->notes));
+    }
+});
+
+T::test('corrupt: invalid side requests are rejected', function () {
+    [$g, $ps] = startedGame('mafia', COR5);
+    foreach (['neutral', 'town', '', null, ['good']] as $bad) {
+        T::throws(fn() => $g->command($ps[1]->id, ['t' => 'side', 'side' => $bad]), '/Invalid side/');
+    }
+    T::throws(fn() => $g->command($ps[1]->id, ['t' => 'side']), '/Invalid side/');
+    T::throws(fn() => $g->command($ps[2]->id, ['t' => 'side', 'side' => 'good']), '/no side to choose/');
+    T::throws(fn() => $g->command($ps[0]->id, ['t' => 'side', 'side' => 'good']), '/no side to choose/');
+    $g->command($ps[1]->id, ['t' => 'side', 'side' => 'good']);
+    T::throws(fn() => $g->command($ps[1]->id, ['t' => 'side', 'side' => 'evil']), '/already chose a side/');
+    T::same('good', $ps[1]->state['side']);
+    // dead
+    [$g, $ps] = startedGame('mafia', COR5);
+    $ps[1]->alive = false;
+    T::throws(fn() => $g->command($ps[1]->id, ['t' => 'side', 'side' => 'good']), '/out of the game/');
+    // lobby and ended
+    [$g, $ps] = lobby('mafia', ['citizen' => 3, 'mafioso' => 1, 'corrupt' => 1], 5);
+    T::throws(fn() => $g->command($ps[1]->id, ['t' => 'side', 'side' => 'good']), '/cannot choose a side/');
+    [$g, $ps] = startedGame('mafia', COR5);
+    $g->phase = 'ended';
+    T::throws(fn() => $g->command($ps[1]->id, ['t' => 'side', 'side' => 'good']), '/cannot choose a side/');
+});
+
+T::test('corrupt: wins with the chosen side and loses when he never chose', function () {
+    foreach ([['good', true], ['evil', false], [null, false]] as [$side, $wins]) { // town wins: mafioso voted out
+        [$g, $ps] = startedGame('mafia', COR5);
+        if ($side) {
+            $g->command($ps[1]->id, ['t' => 'side', 'side' => $side]);
+        }
+        voteOut($g, $ps, $ps[0]);
+        T::same('good', $g->winner);
+        T::same($wins, $g->viewFor($ps[1]->id)['me']['won'], (string)$side);
+        T::same(true, $g->viewFor($ps[2]->id)['me']['won']);
+        T::same(false, $g->viewFor($ps[0]->id)['me']['won']);
+    }
+    foreach ([['evil', true], ['good', false], [null, false]] as [$side, $wins]) { // mafia wins
+        [$g, $ps] = startedGame('mafia', ['mafioso', 'corrupt', 'citizen', 'citizen']);
+        if ($side) {
+            $g->command($ps[1]->id, ['t' => 'side', 'side' => $side]);
+        }
+        toNight($g, $ps);
+        killAct($g, $ps[0], $ps[2]);
+        T::same('evil', $g->winner);
+        T::same($wins, $g->viewFor($ps[1]->id)['me']['won'], (string)$side);
+        T::same(true, $g->viewFor($ps[0]->id)['me']['won']);
+        T::same(false, $g->viewFor($ps[3]->id)['me']['won']);
+    }
+});
+
+T::test('corrupt: neutral is outside the parity count (evil1 good1 corrupt1 -> evil wins; evil0 -> good wins)', function () {
+    [$g, $ps] = startedGame('mafia', ['mafioso', 'corrupt', 'citizen', 'citizen']);
+    toNight($g, $ps);
+    killAct($g, $ps[0], $ps[2]);
+    T::same('ended', $g->phase);
+    T::same('evil', $g->winner);
+    [$g, $ps] = startedGame('mafia', COR5);
+    $ps[2]->alive = false; // evil 1, good 2, corrupt 1: the game goes on
+    voteOut($g, $ps, $ps[3]); // evil 1, good 1: evil wins, the corrupt is not counted
+    T::same('evil', $g->winner);
+    [$g, $ps] = startedGame('mafia', COR5);
+    voteOut($g, $ps, $ps[0]); // evil 0 with the corrupt alive: the town wins
+    T::same('good', $g->winner);
+});
+
+T::test('corrupt: the side is private to him; the roles he and the others know are mutual', function () {
+    $roles = ['mafioso', 'godfather', 'corrupt', 'citizen', 'citizen', 'citizen', 'detective', 'vigilante', 'doctor', 'escort'];
+    [$g, $ps] = startedGame('mafia', $roles);
+    $g->command($ps[2]->id, ['t' => 'side', 'side' => 'good']);
+    $seen = fn(int $viewer, int $of) => $g->viewFor($ps[$viewer]->id)['players'][$of]['role'] ?? null;
+    foreach ([0, 1, 6, 7] as $i) { // mafioso, godfather, detective, vigilante
+        T::same('corrupt', $seen($i, 2), "role $i sees the corrupt");
+        T::same($roles[$i], $seen(2, $i), "the corrupt sees role $i");
+    }
+    foreach ([3, 8, 9] as $i) { // citizen, doctor, escort
+        T::same(null, $seen($i, 2));
+        T::same(null, $seen(2, $i));
+    }
+    // the chosen side is not in anybody else's view
+    foreach ([0, 3, 6, 8] as $i) {
+        T::true(!array_key_exists('side', $g->viewFor($ps[$i]->id)['me']));
+        T::true(!str_contains(json_encode($g->viewFor($ps[$i]->id)), '"side"'));
+    }
+    T::same('good', $g->viewFor($ps[2]->id)['me']['side']);
+    // undecided: side is null for him
+    [$g, $ps] = startedGame('mafia', COR5);
+    T::same(null, $g->viewFor($ps[1]->id)['me']['side']);
+});
+
+T::test('corrupt: setup counts leave neutral out of both teams', function () {
+    $def = Games::get('mafia');
+    T::throws(fn() => Config::normalize($def, ['name' => 'x', 'roles' => ['citizen' => 2, 'mafioso' => 2, 'corrupt' => 1]]), '/must outnumber/');
+    T::throws(fn() => Config::normalize($def, ['name' => 'x', 'roles' => ['citizen' => 3, 'corrupt' => 1]]), '/At least one Mafia/');
+    $cfg = Config::normalize($def, ['name' => 'x', 'roles' => ['citizen' => 3, 'mafioso' => 1, 'corrupt' => 1]]);
+    T::same(1, $cfg['roleCounts']['corrupt']);
+    T::same(5, $cfg['total']);
+    T::throws(fn() => Config::normalize($def, ['name' => 'x', 'roles' => ['citizen' => 3, 'mafioso' => 1, 'corrupt' => 2]]), '/At most 1 Corrupt/');
+});
+
+T::test('rules html mentions the neutral side and the turned cultist', function () {
+    $h = Wm\Rules::html(false);
+    T::true(str_contains($h, 'Cultist') && str_contains($h, 'Corrupt'));
+    T::true(str_contains($h, 'neutral, wins with the side it chooses'));
+    T::true(str_contains($h, 'good, wins with the Werewolves team'));
+    T::true(str_contains($h, 'hunters and cultists is limited'));
 });

@@ -150,6 +150,25 @@ final class Game
         return $this->roleOf($p)['team'] ?? null;
     }
 
+    /** The card the player was dealt: a converted player (turned cultist) keeps it in state['was']. */
+    private function dealtRole(Player $p): ?string
+    {
+        return $p->state['was'] ?? $p->role;
+    }
+
+    /**
+     * The side whose victory counts as this player's own: a fixed `allegiance` of the role, the chosen side for
+     * allegiance 'choose' (null until chosen), otherwise the team.
+     */
+    public function sideOf(Player $p): ?string
+    {
+        $allegiance = $this->roleOf($p)['allegiance'] ?? null;
+        if ($allegiance === 'choose') {
+            return $p->state['side'] ?? null;
+        }
+        return $allegiance ?? $this->teamOf($p);
+    }
+
     private function nightKind(Player $p): ?string
     {
         if (in_array($p->id, $this->night['ghosts'] ?? [], true)) {
@@ -277,16 +296,21 @@ final class Game
                 $counts[$q->role] = ($counts[$q->role] ?? 0) + 1;
             }
         }
-        $good = count($this->players) - $evil;
-        $allowed = function (string $id) use ($good, $evil, $counts): bool {
+        $nonEvil = count($this->players) - $evil;
+        // neutral players are extras: only real good players guarantee good > evil
+        $good = count(array_filter($this->players, fn(Player $q) => $this->teamOf($q) === 'good'));
+        $allowed = function (string $id) use ($good, $nonEvil, $evil, $counts): bool {
             $r = $this->roleDef($id);
             $isEvil = ($r['team'] ?? null) === 'evil';
             if ($isEvil && $good <= $evil + 1) {
                 return false;
             }
+            if (($r['team'] ?? null) === 'neutral' && $good <= $evil) {
+                return false;
+            }
             if (isset($r['cap'])) {
                 $counts[$id] = ($counts[$id] ?? 0) + 1;
-                return $counts[$id] <= Config::capFor($r, $counts, $this->def, $good + ($isEvil ? 0 : 1));
+                return $counts[$id] <= Config::capFor($r, $counts, $this->def, $nonEvil + ($isEvil ? 0 : 1));
             }
             return true;
         };
@@ -421,10 +445,13 @@ final class Game
         $evil = [];
         $special = [];
         $filler = [];
+        $neutral = [];
         foreach ($this->def['roles'] as $r) {
             $cards = array_fill(0, (int)($this->roleCounts[$r['id']] ?? 0), $r['id']);
             if ($r['team'] === 'evil') {
                 $evil = array_merge($evil, $cards);
+            } elseif ($r['team'] === 'neutral') {
+                $neutral = array_merge($neutral, $cards);
             } elseif (!empty($r['filler'])) {
                 $filler = array_merge($filler, $cards);
             } else {
@@ -437,8 +464,10 @@ final class Game
             $e--;
         }
         $evilCounts = array_count_values(array_slice($evil, 0, $e));
-        $good = [];
-        $rest = [];
+        // neutral cards are extras: dealt only while the real good players still outnumber the evil ones
+        $k = min(count($neutral), max(0, $n - 2 * $e - 1));
+        $good = array_slice($neutral, 0, $k);
+        $rest = array_slice($neutral, $k);
         foreach (array_merge($special, $filler) as $id) { // specials kept first, fillers dropped first
             $r = $this->roleDef($id);
             $taken = array_count_values($good);
@@ -624,6 +653,7 @@ final class Game
             case 'profile': $this->updateProfile($p, $cmd); break;
             case 'vote': $this->vote($p, $this->idOrNull($cmd['target'] ?? null)); break;
             case 'action': $this->action($p, $cmd); break;
+            case 'side': $this->chooseSide($p, $cmd['side'] ?? null); break;
             default: throw new GameError('Unknown command.');
         }
     }
@@ -783,6 +813,30 @@ final class Game
         }
     }
 
+    /** A player whose role has allegiance 'choose' (e.g. the Corrupt) picks the side he plays for. Final. */
+    private function chooseSide(Player $p, mixed $side): void
+    {
+        if (!in_array($this->phase, ['discussion', 'vote', 'night', 'hunter'], true)) {
+            throw new GameError('You cannot choose a side right now.');
+        }
+        if (($this->roleOf($p)['allegiance'] ?? null) !== 'choose') {
+            throw new GameError('Your character has no side to choose.');
+        }
+        if (!$p->alive) {
+            throw new GameError('You are out of the game.');
+        }
+        if (isset($p->state['side'])) {
+            throw new GameError('You already chose a side.');
+        }
+        $sides = array_values(array_filter(array_keys($this->def['teams']), fn($t) => $t !== $this->teamOf($p)));
+        if (!is_string($side) || !in_array($side, $sides, true)) {
+            throw new GameError('Invalid side.');
+        }
+        $p->state['side'] = $side;
+        $this->note($p, 'You sided with the ' . $this->def['teams'][$side]['name'] . '. This cannot be undone.');
+        $this->bump();
+    }
+
     private function afterDeaths(string $next): void
     {
         $hunterId = array_shift($this->pendingHunters);
@@ -823,9 +877,10 @@ final class Game
 
     private function checkWin(): bool
     {
+        // neutral players (e.g. the Corrupt) are in neither count: they do not help the evil team reach parity
         $alive = $this->alive();
         $evil = count(array_filter($alive, fn(Player $p) => $this->teamOf($p) === 'evil'));
-        $good = count($alive) - $evil;
+        $good = count(array_filter($alive, fn(Player $p) => $this->teamOf($p) === 'good'));
         $winner = null;
         if ($evil === 0) {
             $winner = 'good';
@@ -886,7 +941,7 @@ final class Game
         if ($team === null) {
             return PHP_INT_MAX;
         }
-        $n = count(array_filter($this->players, fn(Player $q) => $this->teamOf($q) === $team));
+        $n = count(array_filter($this->players, fn(Player $q) => ($this->roleDef((string)$this->dealtRole($q))['team'] ?? null) === $team));
         $used = 0;
         foreach ($this->players as $q) {
             if ($q->role === $p->role) {
@@ -1130,6 +1185,7 @@ final class Game
         }
 
         $attacks = [];
+        $poisons = [];
         $healed = false;
         $guarded = false;
         // Paladins decide together: every living paladin must choose to save; then ONE shared charge is spent
@@ -1152,13 +1208,30 @@ final class Game
                 $this->note($p, "You healed {$this->player($victim)->name}.");
             }
             if ($x['a']['poison'] && empty($p->state['poisonUsed'])) {
-                $p->state['poisonUsed'] = true;
-                $attacks[] = $x['a']['poison'];
-                $this->note($p, "You poisoned {$this->player($x['a']['poison'])->name}.");
+                $poisons[] = [$p, $x['a']['poison']];
             }
         }
         $wolfKills = $victim && !$healed && !$guarded;
-        if ($wolfKills) {
+        // A convertible victim (e.g. the Cultist) is turned instead of killed, unless something else kills him tonight
+        // (a shot): then he simply dies. A same-night poison on a turning victim is void and not spent.
+        $turn = null;
+        if ($wolfKills && !isset($protected[$victim]) && ($this->roleOf($this->player($victim))['convert']['by'] ?? null) === 'kill') {
+            $shot = false;
+            foreach ($of('shoot') as $x) {
+                $shot = $shot || $x['a']['target'] === $victim;
+            }
+            $turn = $shot ? null : $this->player($victim);
+        }
+        foreach ($poisons as [$p, $target]) {
+            if ($turn && $target === $turn->id) {
+                $this->note($p, "{$turn->name} was not poisoned: your poison was not used.");
+                continue;
+            }
+            $p->state['poisonUsed'] = true;
+            $attacks[] = $target;
+            $this->note($p, "You poisoned {$this->player($target)->name}.");
+        }
+        if ($wolfKills && !$turn) {
             $attacks[] = $victim;
         }
         foreach ($of('shoot') as $x) {
@@ -1187,6 +1260,10 @@ final class Game
             }
         }
 
+        if ($turn) {
+            $this->convertPlayer($turn); // after the inspections: the Seer still saw the dealt role
+        }
+
         // A dying player whose card (legacy: wolf kill only) or secret trait haunts rises as a ghost
         $ghosts = [];
         foreach ($dying as $id) {
@@ -1198,6 +1275,24 @@ final class Game
         }
         $this->night['dying'] = $dying;
         $this->night['ghosts'] = $ghosts;
+    }
+
+    /** The victim of a `convert` role joins the attackers: the role is swapped, the dealt one kept in state['was']. */
+    private function convertPlayer(Player $v): void
+    {
+        $into = $this->roleDef($this->roleOf($v)['convert']['into']);
+        $was = $this->roleOf($v);
+        $v->state['was'] = $v->role;
+        $v->state['turnedAt'] = $this->chat ? end($this->chat)['id'] : 0; // earlier pack chat stays hidden from him
+        $v->role = $into['id'];
+        unset($v->state['ghostSlot']);
+        $bad = $this->def['teams'][$into['team']]['name'];
+        $this->note($v, "You were attacked by the {$bad}, but they spared you: you are now a {$into['name']} and play for the {$bad}.");
+        foreach ($this->alive() as $q) {
+            if ($q->id !== $v->id && $this->teamOf($q) === $into['team']) {
+                $this->note($q, "{$v->name} was a {$was['name']} and has joined you as a {$into['name']}.");
+            }
+        }
     }
 
     /** Turn a dying player into a ghost (once). Returns false when they already are one. */
@@ -1257,6 +1352,11 @@ final class Game
         }
         if (!empty($this->roleOf($viewer)['knowsEachOther']) && $viewer->role === $p->role) {
             return true; // e.g. paladins know each other
+        }
+        $mine = $this->roleOf($viewer);
+        $theirs = $this->roleOf($p);
+        if (in_array($p->role, $mine['mutualWith'] ?? [], true) || in_array($viewer->role, $theirs['mutualWith'] ?? [], true)) {
+            return true; // e.g. the Corrupt and the roles he knows (symmetric)
         }
         return $this->teamOf($viewer) === 'evil' && $this->teamOf($p) === 'evil';
     }
@@ -1368,7 +1468,7 @@ final class Game
         $chat = array_slice(array_values(array_filter($this->chat, fn($m) =>
             $m['ch'] === 'all'
             || ($m['ch'] === 'dead' && (!$me->alive || $this->phase === 'ended'))
-            || ($m['ch'] === 'evil' && $isEvil)
+            || ($m['ch'] === 'evil' && $isEvil && $m['id'] > ($me->state['turnedAt'] ?? 0))
             || ($m['ch'] === 'dm' && ($m['from'] === $me->id || ($m['to'] ?? null) === $me->id)))), -self::CHAT_KEEP);
         $players = [];
         foreach ($this->players as $p) {
@@ -1379,6 +1479,9 @@ final class Game
             }
             if ($p->role !== null && $this->canSeeRole($me, $p)) {
                 $row['role'] = $p->role;
+            }
+            if ($this->phase === 'ended') {
+                $row['won'] = $this->winner !== null && $this->sideOf($p) === $this->winner;
             }
             if ($p->alive) {
                 foreach ($this->marks as [$target, $by]) {
@@ -1404,6 +1507,12 @@ final class Game
                 : array_map(static fn(array $e) => array_diff_key($e, ['cs' => 1]), $this->log),
             'chat' => $chat,
         ];
+        if ($this->phase === 'ended') {
+            $view['me']['won'] = $this->winner !== null && $this->sideOf($me) === $this->winner;
+        }
+        if (($role['allegiance'] ?? null) === 'choose') {
+            $view['me']['side'] = $me->state['side'] ?? null; // only the player himself knows
+        }
         if (!empty($role['knowsEachOther'])) {
             $view['me']['mates'] = array_values(array_map(static fn(Player $q) => $q->id,
                 array_filter($this->players, static fn(Player $q) => $q->role === $me->role && $q->id !== $me->id)));

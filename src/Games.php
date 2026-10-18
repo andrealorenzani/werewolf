@@ -30,6 +30,7 @@ final class Games
                     'nightKind' => $r['night']['kind'] ?? null, 'nightStep' => $r['night']['step'] ?? 1,
                     'haunts' => isset($r['haunt']), 'onDeath' => $r['onDeath'] ?? null,
                     'cap' => $r['cap'] ?? null, 'legacy' => !empty($r['legacy']), 'knowsEachOther' => !empty($r['knowsEachOther']),
+                    'allegiance' => $r['allegiance'] ?? null, 'goal' => $r['goal'] ?? null, 'convert' => isset($r['convert']),
                 ], $d['roles']),
                 'ghost' => isset($d['ghost']) ? array_intersect_key($d['ghost'], array_flip(['name', 'icon', 'desc', 'min', 'max', 'def', 'cap'])) : null,
             ];
