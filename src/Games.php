@@ -6,12 +6,18 @@ namespace Wm;
 /** Registry of playable games. To add a game: create src/games/<id>.php and list the id here. */
 final class Games
 {
-    private const IDS = ['werewolf', 'mafia'];
+    private const IDS = ['werewolf', 'mafia', 'impostor'];
 
     /** @return array<string,array>|null */
     public static function get(string $id): ?array
     {
         return in_array($id, self::IDS, true) ? require __DIR__ . '/games/' . $id . '.php' : null;
+    }
+
+    /** Room engine of a game type: `classic` (Werewolf/Mafia, `Game`) unless its definition says `engine`. */
+    public static function engine(string $type): string
+    {
+        return (self::get($type)['engine'] ?? 'classic');
     }
 
     /** JSON-safe descriptions of every game, for the client's setup screen. */
@@ -20,8 +26,13 @@ final class Games
         $out = [];
         foreach (self::IDS as $id) {
             $d = self::get($id);
+            if (($d['engine'] ?? 'classic') === 'impostor') {
+                $out[] = ['id' => $d['id'], 'engine' => 'impostor', 'title' => $d['title'], 'icon' => $d['icon'],
+                    'tagline' => $d['tagline'], 'pitch' => $d['pitch'], 'limits' => ImpostorConfig::limits()];
+                continue;
+            }
             $out[] = [
-                'id' => $d['id'], 'title' => $d['title'], 'icon' => $d['icon'], 'tagline' => $d['tagline'],
+                'id' => $d['id'], 'engine' => 'classic', 'title' => $d['title'], 'icon' => $d['icon'], 'tagline' => $d['tagline'],
                 'teams' => $d['teams'],
                 'roles' => array_map(static fn(array $r) => [
                     'id' => $r['id'], 'name' => $r['name'], 'team' => $r['team'], 'icon' => $r['icon'], 'desc' => $r['desc'],

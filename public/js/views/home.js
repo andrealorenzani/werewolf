@@ -8,7 +8,7 @@ export async function renderHome(app, navigate) {
   const sessions = Object.entries(getSessions());
   app.innerHTML = `
     <div class="stack">
-      <header><h1>🌙 Werewolf &amp; Mafia</h1>
+      <header><h1>🌙 Werewolf, Mafia &amp; Impostor</h1>
         <p class="muted">Social deduction games for your phone or browser. Pick a game, share the code, and play.</p>
         <p><a href="how-to-play" data-rules>Rules and characters</a></p></header>
       <section class="cards">
@@ -16,7 +16,8 @@ export async function renderHome(app, navigate) {
           <button class="panel game-card" data-create="${d.id}">
             <div class="big">${d.icon}</div><h2>${esc(d.title)}</h2>
             <p class="muted">${esc(d.tagline)}</p>
-            <span class="team-good">${esc(d.teams.good.name)}</span> vs <span class="team-evil">${esc(d.teams.evil.name)}</span>
+            ${d.engine === 'impostor' ? '<span class="team-evil">One Impostor</span> vs <span class="team-good">everyone else</span>'
+              : `<span class="team-good">${esc(d.teams.good.name)}</span> vs <span class="team-evil">${esc(d.teams.evil.name)}</span>`}
           </button>`).join('')}
       </section>
       <section class="panel stack">

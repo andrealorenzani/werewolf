@@ -2,6 +2,14 @@
 
 Newest first. Maintained by the `documenter` agent for every player- or developer-visible change.
 
+## 2026-10-23
+### Added
+- Third game, **Impostor**: everyone privately answers the same question except one player (the Impostor), who gets a similar one. Phases lobby, optional writing (players write question pairs), answer, reveal, vote, unveil, result, ended; the Impostor scores (host-set 1-10 points) when not strictly the most voted. Built-in pool of 69 pairs (`src/games/impostor.php`) or pairs written by the players; the host may play or not (God mode: sees the live turn and every pair). 4-30 players, 1-20 turns, vote 30-90 s; answer 180 s, speaker 120 s and unveil 60 s are fixed. No chat. Leaving/kicking: the Impostor leaving cancels the turn, below 4 players ends the game, a leaver's answers and votes are purged. Known limitation: a gone host stalls the lobby and writing phases.
+- New files: `src/Impostor.php`, `src/ImpostorConfig.php`, `public/js/views/impostor-room.js`, `public/js/views/impostor-setup.js`, `tests/ImpostorTest.php`, `tests/JsTest.php` (`node --check` of all client scripts). New command set for Impostor (see `docs/code.md`). Rules section added to `docs/rules.md`, `Rules::html` and the popup.
+### Changed
+- Multi-engine refactor: new `Room` interface, `RoomBase` trait and `Rooms` factory; `Game` implements `Room`; `Store` and `Api` work against `Room`; `Api::info` reports `joinedCount()`. Game definitions may carry `engine`; `Games::engine` and `Games::publicList` (now returns `engine`, plus `limits` for Impostor) expose it; the client router (`main.js` `openGame`) opens the matching room view. Architecture decision 16.
+- SEO: site name, titles, descriptions, home FAQ, og alt text and how-to-play heading now say "Werewolf, Mafia & Impostor"; `updated` bumped to 2026-10-23 for both pages; home heading and Impostor game card updated.
+
 ## 2026-10-18
 ### Added
 - Werewolf **Cultist** (looks good, wins with the werewolves): turned into a werewolf instead of dying when the werewolves kill him; healed/shielded/protected means no turn; another lethal source the same night just kills him; a same-night poison on him is void and not spent (the Witch is told). Wolves are told he joined; he reads wolf chat only from the turn onward; ghost slot cleared. Counted as good by the Seer, Ghost, parity and Paladin charges; wins with the werewolves even when dead; loses if the last wolf dies unturned. Cap one per werewolf; red name in setup. Known trade-off: setup counts him as good for "villagers must outnumber werewolves".

@@ -23,8 +23,8 @@ $crumbs = [[
 </head>
 <body>
   <main class="stack" style="max-width:760px;margin:0 auto;padding:16px">
-    <nav><a href="./">Werewolf &amp; Mafia</a> › How to play</nav>
-    <h1>How to play Werewolf &amp; Mafia</h1>
+    <nav><a href="./">Werewolf, Mafia &amp; Impostor</a> › How to play</nav>
+    <h1>How to play Werewolf, Mafia &amp; Impostor</h1>
 <?= Wm\Rules::html() ?>
 
     <p class="muted">Last updated <?= $h(Seo::PAGES['/how-to-play']['updated']) ?>. <a href="./">Back to the games</a>.</p>

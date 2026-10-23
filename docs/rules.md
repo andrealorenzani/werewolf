@@ -1,6 +1,6 @@
 # Game rules
 
-Two social-deduction games share one engine. A hidden minority (the **evil** team) tries to
+Three games live here. **Werewolf** and **Mafia** are social-deduction games that share one engine (everything up to *Differences between the two games*); **Impostor** is a separate quick question game with its own rules (see the *Impostor* section). In Werewolf and Mafia a hidden minority (the **evil** team) tries to
 eliminate the informed-but-powerless majority (the **good** team). The server acts as the
 moderator, so no human narrator is needed.
 
@@ -122,10 +122,43 @@ Default set: 5 Citizens, 1 Mafioso (other characters 0).
 | Special | Cultist (good, turns into a werewolf) | Corrupt (neutral, chooses a side) |
 | Core loop, win conditions, vote | identical | identical |
 
+---
+
+## Impostor
+
+*Setting:* a party game of similar questions. Every turn everybody privately answers the same question, except one player (the **Impostor**) who gets a similar but different one and has to blend in. There is no chat in this game: talk in person or over a call.
+
+### Setup and lobby
+- The host sets a name/description, **seats** (4–30, default 8), **turns** (1–20, default 3; only with the built-in questions), **points** the Impostor earns (1–10, default 3), the **vote time** (30–90 s, default 60), the question source (built-in pool, or written by the players) and whether the host plays. Until the game starts the host can edit all of it; seats cannot drop below the players already joined.
+- The host starts with **at least 4 playing players** (no late joiners after the start). Players join with a code / QR / link like in the other games and may edit their name or avatar at any time.
+- **God mode:** if the host does not play, they never answer or vote but see everything: the whole current turn live (questions, who the Impostor is, answers and votes) and every question pair. They moderate (skip, open the vote). Players can never see this.
+
+### Questions
+- **Built-in pool:** the server picks the configured number of pairs at random.
+- **Written by the players (writing phase):** each playing player writes a pair (the question for everybody, and a similar one for the Impostor; 5–140 characters each, the two must differ) and **confirms** it. The game starts by itself when every playing player has confirmed; the host can also force the start with the pairs confirmed so far (at least one). A non-playing host may write a pair too: it is used if confirmed, dropped otherwise. Unconfirmed pairs are dropped. There is one turn per pair, in random order. The author of a pair answers the normal question and is **never the Impostor** of that turn. Authors see only their own pair while writing.
+
+### A turn
+1. **Answer** (at most 180 s): everyone answers privately (1–100 characters). Only the Impostor knows it is the Impostor and sees its own question. It ends when everybody has answered; players who did not answer show "(no answer)".
+2. **Reveal:** in a random order each player's answer is shown and that player presses *done* (at most 120 s per speaker; the host can skip a speaker or open the vote early).
+3. **Vote** (host-set time, 30–90 s): everyone votes for who they think the Impostor is (not themselves; blank allowed; votes can be changed until the phase ends). Voting opens after the last answer has been read out, or when the host opens it earlier. When all playing players have voted it moves on early to the unveil.
+4. **Unveil** (at most 60 s): the Impostor reveals itself (automatically on timeout).
+5. **Result:** both questions, all answers, who voted for whom and the tally are shown. Any player (or the host) presses *next* for the following turn; after the last turn the game ends.
+
+### Scoring and winning
+- Only the Impostor scores. It is **discovered** only if it received **strictly more votes** than every other player. If discovered, nobody scores. A tie at the top that includes the Impostor, or nobody voting, means it is **not discovered** and it earns the host's points.
+- A **cancelled** turn (the Impostor left or was removed) scores 0.
+- After the last turn the highest score wins; players tied on top share the win; a top score of 0 means no winner.
+
+### Leaving and timeouts
+- A player may leave and the host may remove players. The host can never leave. A leaver's answers and votes are removed, and votes for them are cleared (those voters can vote again). If the **Impostor** leaves, the turn is cancelled (no points). If fewer than 4 playing players remain, the game ends. The turn then continues if the leaver was a speaker or the last missing answer/vote.
+- The answer, reveal and unveil timeouts are fixed, so a silent player cannot stall a running turn. **Known limitation:** nothing advances in the lobby or the writing phase without the host (a gone host stalls it); such games are deleted after 7 days idle.
+- Ended games are deleted 2 days after the end, others after 7 days idle (as in the other games).
+
 ## Variant choices (fixed on purpose)
 - The vote is a plurality with **no run-off**; ties spare everyone.
 - The Mafia Doctor may protect the same person on consecutive nights and may protect himself.
 - Deaths never reveal their cause; the dead's card is revealed only if *reveal characters* is on.
 - The Hunter's shot happens immediately, even when the Hunter was voted out.
 - Day 0 has no vote.
+- Impostor: the Impostor escapes on a tie, there is no run-off or second guess.
 - Games are deleted 2 days after they end and 7 days after the last activity; afterwards the code answers "Game not found".

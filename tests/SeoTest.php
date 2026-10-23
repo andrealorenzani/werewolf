@@ -57,7 +57,7 @@ T::test('seo: how-to-play lists current roles, the ghost trait and the night tim
     T::true(str_contains($html, '30 to 90 second timer') && str_contains($html, 'always on'), 'night timer');
     T::true(!str_contains($html, 'Timers are optional'), 'old copy removed');
     T::true(str_contains($html, 'Last updated ' . Seo::PAGES['/how-to-play']['updated']), 'updated date shown');
-    T::same('2026-10-18', Seo::PAGES['/how-to-play']['updated']);
+    T::same('2026-10-23', Seo::PAGES['/how-to-play']['updated']);
 });
 
 T::test('seo: how-to-play explains the Cultist and the Corrupt', function () {
@@ -69,4 +69,26 @@ T::test('seo: how-to-play explains the Cultist and the Corrupt', function () {
     T::true(str_contains($html, '<strong>🕯️ Cultist</strong>'), 'cultist listed');
     T::true(str_contains($html, '<strong>🤝 Corrupt</strong>'), 'corrupt listed');
     T::true(str_contains($html, 'Neutral players'), 'neutral explained in how to win');
+});
+
+T::test('seo: pages and rules cover Impostor (titles, how-to-play section, home cards and FAQ)', function () {
+    $_SERVER['HTTP_HOST'] = 'example.test';
+    $_SERVER['SCRIPT_NAME'] = '/how-to-play.php';
+    T::true(str_contains(Seo::PAGES['/']['title'], 'Impostor') && str_contains(Seo::PAGES['/how-to-play']['title'], 'Impostor'));
+    T::true(str_contains(Seo::SITE_NAME, 'Impostor'));
+    ob_start();
+    require __DIR__ . '/../public/how-to-play.php';
+    $html = (string)ob_get_clean();
+    T::true(str_contains($html, '<section id="impostor">') && str_contains($html, 'Impostor rules'), 'section');
+    T::true(str_contains($html, '<a href="?create=impostor">'), 'start link');
+    T::true(!str_contains($html, 'Impostor characters'), 'no role list for Impostor');
+    $_SERVER['SCRIPT_NAME'] = '/index.php';
+    $_GET = [];
+    ob_start();
+    require __DIR__ . '/../public/index.php';
+    $home = (string)ob_get_clean();
+    T::true(str_contains($home, 'href="?create=impostor"') && str_contains($home, 'Play Impostor'), 'home card');
+    T::true(str_contains($home, 'What is Impostor?'), 'faq');
+    preg_match_all('#<script type="application/ld\+json">(.*?)</script>#s', $home, $m);
+    T::true(str_contains(implode($m[1]), 'What is Impostor?'), 'faq json-ld');
 });

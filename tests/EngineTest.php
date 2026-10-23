@@ -2349,6 +2349,9 @@ T::test('cultist: new state keys survive a save/load round trip', function () {
 T::test('cultist: Games::publicList exposes allegiance, goal and convert', function () {
     $by = [];
     foreach (Games::publicList() as $d) {
+        if ($d['engine'] !== 'classic') {
+            continue;
+        }
         $by[$d['id']] = array_column($d['roles'], null, 'id');
     }
     T::same('evil', $by['werewolf']['cultist']['allegiance']);

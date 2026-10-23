@@ -3,7 +3,7 @@
 > Maintained by the `documenter` agent together with `docs/code.md`.
 
 ## Purpose and scope
-Two turn-based social-deduction games, **Werewolf** and **Mafia**, played from any browser (phone-first). A host creates a game, picks how many of each character, shares a code / QR link, and when the host starts (4+ players, seats need not all be filled) the server deals the character cards and acts as moderator. Rules: [`rules.md`](rules.md).
+Three games, played from any browser (phone-first). A host creates a game, picks how many of each character, shares a code / QR link, and when the host starts (4+ players, seats need not all be filled) the server deals the character cards and acts as moderator. **Werewolf** and **Mafia** are turn-based social-deduction games run by the classic engine (`Game`); **Impostor** is a party game of similar questions run by its own engine (`Impostor`). Rules: [`rules.md`](rules.md).
 
 Out of scope: accounts, spectators, persistence beyond a week, i18n.
 
@@ -27,9 +27,12 @@ flowchart LR
   end
   subgraph "Apache + PHP (public/)"
     A[api.php] --> API[Api::handle]
-    API --> G[Game: rules, phases, views]
+    API --> R[Rooms: engine factory]
+    R --> G[Game: Werewolf / Mafia rules]
+    R --> I[Impostor: question game rules]
     API --> S[Store: flock + atomic JSON]
-    G --> D[(src/games/*.php role data)]
+    G --> D[(src/games/*.php data)]
+    I --> D
   end
   S --> F[(data/ID.json)]
   V -- "POST api.php?a=state (poll) / cmd" --> A
@@ -39,8 +42,8 @@ flowchart LR
 Layers:
 - **Entry** `public/api.php` – reads the request, calls `Api`, writes JSON.
 - **API** `src/Api.php` – a pure `handle(action, input) → [status, payload]`, so tests call it without HTTP.
-- **Domain** `src/Game.php` (+ `Player`, `Config`, `GameError`) – all rules. `src/games/*.php` are data-only game definitions registered in `src/Games.php`.
-- **Persistence** `src/Store.php` – locking, atomic writes, id validation, sweeping.
+- **Domain** one engine per game family, both implementing the `Room` interface: `src/Game.php` (+ `Config`) for Werewolf/Mafia and `src/Impostor.php` (+ `ImpostorConfig`, trait `RoomBase`) for Impostor; shared `Player`, `GameError`. `Rooms` picks the engine from the game definition. `src/games/*.php` are data-only game definitions registered in `src/Games.php`.
+- **Persistence** `src/Store.php` (works against `Room`) – locking, atomic writes, id validation, sweeping.
 - **Client** `public/js` – router, views, polling.
 
 ## Request lifecycle
@@ -76,8 +79,19 @@ lobby ─start→ discussion(day 0) ─→ night ─→ [hunter] ─→ discussi
 - Randomness (`rng`) and time (`clock`) are injectable for tests.
 - The engine reads capabilities from role definitions (`night.kind`, `onDeath`, `appearsAs`, `team`, `filler`), never role ids. Setup caps are data (`cap` in role definitions, `Config::capFor`, mirrored in `setup.js`). Supported night kinds: `kill`, `inspect`, `protect`, `block`, `shoot`, `witch`, `guard` (with `limit.countTeam`); roles may also have `haunt`.
 
+## Impostor engine (`src/Impostor.php`)
+```
+lobby ─start→ [writing] ─→ (answer ─→ reveal ─→ vote ─→ unveil ─→ result) × turns ─→ ended
+```
+- `writing` exists only when the players write the questions (`settings.source = players`); with the built-in pool (`pairs` in `src/games/impostor.php`) the deck of pair indices is drawn at start. Turn state lives in `turn` (never in a view as a whole); finished turns go to the public `history` (names copied, so they survive leavers).
+- Timers are lazy like in `Game` (`tick`, absolute `deadline`). Answer 180 s, speaker 120 s and unveil 60 s are fixed constants (a silent player cannot stall a turn); vote is host-set, 30–90 s. Lobby and writing have no timers.
+- Phases advance early when everybody has answered / voted; `next` (result -> next turn or end) can be pressed by any player. Leaving/kicking goes through `RoomBase::removePlayer` and the `dropped()` hook, which purges the leaver's answers/votes, cancels the turn if the Impostor left and ends the game below 4 playing players.
+- **God mode:** a host with `hostPlays = false` is a seat flagged `spectator`; `viewFor` adds a `god` block (live turn incl. Impostor id, answers, votes, all pairs) only for that player.
+- No chat in this engine. Retention is the same as classic (`endedAt`, `Store::expired`).
+
 ## Cross-cutting concerns
-- **Hidden information**: suggestions/confirmations of the evil kill appear (`teamChoices`, `agreed`, `agreedTarget`, `confirmed`, `mine`) only for the living evil team. The only way client state is produced is `Game::viewFor($playerId)`. It includes another player's role only if allowed (self, dead with reveal on, evil teammates, everyone after the end). Chat is filtered by channel (`all`, `dead`, `evil`, `dm` only for sender and recipient). `me.side` is visible only to its owner. The ghost count `ghosts` is public, the slots are private; a ghost's side (`me.ghost`) is visible only to that ghost; ghost marks are public. After the end the log is `storyLog()`, which interleaves chat according to the host's story settings. Tokens and avatars never appear in views (`pool` neither); avatars are fetched through the separate `avatars` action, only by authenticated players.
+- **Hidden information (Impostor)**: the Impostor's identity and question, other players' answers not yet read out, votes of others during the vote, the deck/pairs and other authors' pairs never leave the server except through `Impostor::viewFor`. A player sees: own question (`me.question`), own answer and vote, answers up to the current speaker (reveal) or all (vote/unveil), and after the turn the public `history`. The writing author sees only their own pair (`me.pair`). Only the God host gets the `god` block. `hasVoted` / `answered` flags are public, targets are not.
+- **Hidden information (classic)**: suggestions/confirmations of the evil kill appear (`teamChoices`, `agreed`, `agreedTarget`, `confirmed`, `mine`) only for the living evil team. The only way client state is produced is `Game::viewFor($playerId)`. It includes another player's role only if allowed (self, dead with reveal on, evil teammates, everyone after the end). Chat is filtered by channel (`all`, `dead`, `evil`, `dm` only for sender and recipient). `me.side` is visible only to its owner. The ghost count `ghosts` is public, the slots are private; a ghost's side (`me.ghost`) is visible only to that ghost; ghost marks are public. After the end the log is `storyLog()`, which interleaves chat according to the host's story settings. Tokens and avatars never appear in views (`pool` neither); avatars are fetched through the separate `avatars` action, only by authenticated players.
 - **Validation**: every input is validated server-side (phase, aliveness, target legality, lengths, id regex `^[A-Z2-9]{6}$` against path traversal). Player mistakes throw `GameError` → HTTP 400 with the message; anything else → 500 with a generic message and `error_log`.
 - **Auth**: random 128-bit token per player, compared with `hash_equals`; sent in the POST body (not in URLs/logs). No accounts, no cookies, hence no CSRF surface.
 - **XSS**: all dynamic client text goes through `esc()`; avatars must match `data:image/(jpeg|png|webp);base64,…` ≤ 40 KB and are only used in `<img src>`.
@@ -91,7 +105,7 @@ lobby ─start→ discussion(day 0) ─→ night ─→ [hunter] ─→ discussi
 |---|---|
 | `public/` | Web root: `index.php` (home shell), `how-to-play.php`, `robots.php`, `sitemap.php`, `api.php`, `.htaccess`, `img/og.png`, `css/`, `js/` |
 | `src/` | PHP domain code (autoloaded as `Wm\`) |
-| `src/games/` | Data-only game definitions |
+| `src/games/` | Data-only game definitions (`werewolf`, `mafia`; `impostor` with `engine => impostor` and its question-pair pool) |
 | `config/` | Configuration |
 | `data/` | Runtime game files (git-ignored, access denied) |
 | `tests/` | Test runner and tests |
@@ -99,7 +113,7 @@ lobby ─start→ discussion(day 0) ─→ night ─→ [hunter] ─→ discussi
 | `.claude/` | Agentic feature workflow |
 
 ## Testing strategy
-`php tests/run.php [filter]`. Engine tests drive `Game` directly with fixed roles, a mutable `Clock` and fixed `rng`; API tests call `Api::handle` against a temporary data directory (create/join/poll/commands/lazy timers/sweep).
+`php tests/run.php [filter]`. Engine tests drive `Game` directly with fixed roles, a mutable `Clock` and fixed `rng`; API tests call `Api::handle` against a temporary data directory (create/join/poll/commands/lazy timers/sweep). `ImpostorTest.php` drives `Impostor` with a mutable `Clock` and fixed `rng`; `JsTest.php` runs `node --check` on every client script (skipped without Node).
 
 ## Key decisions
 1. **PHP + polling instead of WebSockets** – shared hosting cannot keep processes alive. Cost: ≤1.2 s latency, one small request per player per poll.
@@ -117,11 +131,13 @@ lobby ─start→ discussion(day 0) ─→ night ─→ [hunter] ─→ discussi
 13. **Retention** – ended games live 2 days, others 7 days idle; expiry is checked on read (`peekLive`) and swept lazily, so no cron is needed.
 14. **Rules popup from one server source** – `Wm\Rules::html()` builds the rules guide as trusted HTML (all dynamic text escaped, values from `Config`/`src/games`). It feeds both `/how-to-play` and the in-game popup (public GET action `rules` -> `{html}`, fetched once and cached by `api.js`), so the two cannot drift; the client inserts it as-is, which is safe only because the source is server-controlled.
 15. **Conversion and neutral allegiance as role data** – the Werewolf Cultist (`convert`, `allegiance: evil`) and the Mafia Corrupt (`allegiance: choose`, `neutral` team) are expressed through role flags and `sideOf`, not role ids in the engine. Known balance trade-off: setup counts the Cultist as good for "good must outnumber evil".
+16. **Parallel engine per game family** – the `engine` field of a game definition (`classic` default, or `impostor`) selects the engine. `Room` is the interface `Store` and `Api` work against; `RoomBase` is the shared seats/presence/profile/leave/kick/clock/rng plumbing for engines other than `Game`; `Rooms::config/create/load` is the factory (old saves without an engine marker are resolved by type); `Games::engine` and `Games::publicList` (returns `engine`, plus `limits` for Impostor) expose it to the client. Chosen over generalising `Game` because the Impostor flow (no night, no teams, no chat, scores) shares almost nothing with the classic rules. The client router (`main.js`) picks the room view by the same field. Rules live in `src/Game.php` (classic) and `src/Impostor.php`.
 
 ## Deployment
 The site lives at the root of its own domain on shared hosting. The runtime tree (`public/`, `src/`, `config/config.php`, `data/` guards, root `.htaccess`) is uploaded to the server's root directory; the root `.htaccess` serves `public/` at `/` and denies everything else. Alternatively set the web directory to `public/`. `scripts/deploy.sh` uploads only changed runtime files of committed code (tests must pass) through the `sftp-upload` skill; target in gitignored `.deploy.local`, credentials outside the repo. Docs, tests, scripts and `.claude/` are never uploaded. Ensure PHP ≥ 8.2, a writable `data/` (or `data_dir` outside the web root). Use HTTPS. No host, domain or credential is ever written to tracked files. If a database is ever added, it must use only `werewolf_`-prefixed tables (see `CLAUDE.md`). Details in the README.
 
 ## Open questions / limitations
-- No spectators, no rejoin after being kicked, no per-game language.
+- Impostor: a gone host stalls the lobby and writing phases (no timers there; the game is swept after 7 days idle).
+- No spectators (the Impostor God host plays no part), no rejoin after being kicked, no per-game language.
 - Presence is approximate (15 s). A heal does not protect a poisoned bystander (Witch). A game with no polling clients does not progress.
 - Heavy concurrent use (many large games) would be better served by a real database.

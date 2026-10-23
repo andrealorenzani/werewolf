@@ -20,7 +20,7 @@ final class Rules
         $nmax = Config::NIGHT_MAX;
         $ghostGames = [];
         foreach (Games::publicList() as $g) {
-            if ($g['ghost']) {
+            if ($g['engine'] === 'classic' && $g['ghost']) {
                 $ghostGames[] = $g['title'];
             }
         }
@@ -29,7 +29,7 @@ final class Rules
         $dr = Config::RANGES['discussionSeconds'];
         $vr = Config::RANGES['voteSeconds'];
         $o = <<<HTML
-    <p>Werewolf and Mafia are social deduction games. A small hidden team (the werewolves or the Mafia) secretly eliminates players at night, while the informed-but-powerless majority tries to find them by talking and voting during the day. The server deals the cards and moderates, so nobody has to narrate.</p>
+    <p>Werewolf and Mafia are social deduction games; Impostor is a quick question game (see below). A small hidden team (the werewolves or the Mafia) secretly eliminates players at night, while the informed-but-powerless majority tries to find them by talking and voting during the day. The server deals the cards and moderates, so nobody has to narrate.</p>
 
     <h2>Game flow</h2>
     <ol>
@@ -48,6 +48,10 @@ final class Rules
 
 HTML;
         foreach (Games::publicList() as $g) {
+            if ($g['engine'] === 'impostor') {
+                $o .= self::impostor($g, $links);
+                continue;
+            }
             $o .= "\n    <section id=\"{$h($g['id'])}\">\n"
                 . "      <h2>{$h($g['icon'])} {$h($g['title'])} characters</h2>\n"
                 . "      <p>{$h($g['tagline'])} <strong>{$h($g['teams']['good']['name'])}:</strong> {$h($g['teams']['good']['goal'])} "
@@ -76,5 +80,38 @@ HTML;
             $o .= "    </section>\n";
         }
         return $o;
+    }
+
+    /** Rules section of the Impostor game; every number comes from ImpostorConfig / Impostor. */
+    private static function impostor(array $g, bool $links): string
+    {
+        $h = static fn(string $s): string => htmlspecialchars($s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $vmin = ImpostorConfig::VOTE_MIN;
+        $vmax = ImpostorConfig::VOTE_MAX;
+        $pmin = ImpostorConfig::POINTS_MIN;
+        $pmax = ImpostorConfig::POINTS_MAX;
+        $pdef = ImpostorConfig::POINTS_DEF;
+        $tmin = ImpostorConfig::TURNS_MIN;
+        $tmax = ImpostorConfig::TURNS_MAX;
+        $smin = ImpostorConfig::SEATS_MIN;
+        $smax = ImpostorConfig::SEATS_MAX;
+        $amax = Impostor::ANSWER_MAX;
+        $sm = Impostor::SPEAK_MS / 1000;
+        $am = Impostor::ANSWER_MS / 1000;
+        $um = Impostor::UNVEIL_MS / 1000;
+        $o = "\n    <section id=\"impostor\">\n      <h2>{$h($g['icon'])} {$h($g['title'])} rules</h2>\n"
+            . "      <p>{$h($g['pitch'])}</p>\n      <ol>\n"
+            . "        <li><strong>Questions:</strong> the host picks the built-in question pool or lets the players write their own pairs of similar questions (the author of a pair always answers the question for everybody and is never the Impostor of that turn).</li>\n"
+            . "        <li><strong>Answer:</strong> everyone answers privately, up to {$amax} characters. The Impostor knows it is the Impostor and sees its own question. The phase ends when everybody has answered, or after {$am} seconds.</li>\n"
+            . "        <li><strong>Read out:</strong> in a random order each player reveals their answer and presses done ({$sm} seconds at most per speaker; the host can skip a speaker or open the vote early).</li>\n"
+            . "        <li><strong>Vote:</strong> everybody, the Impostor included, votes for who they think the Impostor is (not for themselves; votes can be changed until the phase ends). The vote lasts {$vmin} to {$vmax} seconds, chosen by the host, or ends as soon as everybody has voted.</li>\n"
+            . "        <li><strong>Unveil:</strong> the Impostor reveals itself (automatically after {$um} seconds), then the questions, answers and votes are shown to everyone.</li>\n"
+            . "      </ol>\n"
+            . "      <p><strong>Scoring:</strong> only the Impostor scores. It earns the host's points ({$pmin} to {$pmax}, {$pdef} by default) if it was not discovered. It is discovered only when it received strictly more votes than every other player: a tie at the top that includes the Impostor, or nobody voting, means it escapes. After the last turn ({$tmin} to {$tmax} turns with the built-in questions, one per written pair otherwise) the highest score wins; players tied on the top score share the win and a top score of zero means no winner.</p>\n"
+            . "      <p><strong>Setup:</strong> {$smin} to {$smax} players. The host may choose not to play: then the host sees everything (the current turn live and all question pairs) and moderates. If the Impostor leaves or is removed the turn is cancelled without points; if fewer than {$smin} players remain the game ends.</p>\n";
+        if ($links) {
+            $o .= "      <p><a href=\"?create={$h($g['id'])}\">Start an {$h($g['title'])} game</a></p>\n";
+        }
+        return $o . "    </section>\n";
     }
 }

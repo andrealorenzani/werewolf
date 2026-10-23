@@ -1,9 +1,10 @@
-# Werewolf & Mafia
+# Werewolf, Mafia & Impostor
 
 Browser-based, turn-based social-deduction games for 4–30 players, written in **plain PHP** (no database, no dependencies) so it runs on ordinary shared hosting.
 
 - 🐺 **Werewolf** – villagers hunt the werewolves hiding among them.
 - 🕴️ **Mafia** – the town hunts the criminals who run it.
+- 🎭 **Impostor** – everyone answers the same question except one player, who gets a similar one: spot the odd one out and score points when you blend in. Built-in questions or questions written by the players; the host may play or just moderate (sees everything). No night phase, no chat.
 
 The server is the game master: it deals the character cards, runs the night actions, counts the votes and announces the winner. Everybody plays from their own browser (phone-friendly).
 
@@ -14,6 +15,8 @@ The server is the game master: it deals the character cards, runs the night acti
 4. Day 0 discussion → night (special characters act secretly) → dawn → discussion → vote → night … until one side wins.
 
 The host can delete a game for everyone from the home page; players can send private messages and the host may replay chats in the end-of-game story. Werewolf includes the Paladin, the Cultist and a hidden Ghost trait; Mafia has the neutral Corrupt (ghost count chosen by the host); an in-game rules popup shares its text with `/how-to-play`; the werewolves/mafia agree on a victim by suggesting and confirming.
+
+Impostor is a separate engine (`Wm\Impostor`, turns of answer → reveal → vote → unveil → result, 4–30 players) selected by the game's `engine` field; Werewolf and Mafia use `Wm\Game`.
 
 Full rules: [`docs/rules.md`](docs/rules.md).
 
@@ -43,7 +46,7 @@ Ended games are deleted 2 days after they end, other games after 7 days of inact
 ## Project structure
 ```
 public/   web root: index.php, how-to-play.php, robots.php, sitemap.php, api.php, css/, js/ (vanilla JS client)
-src/      PHP engine (Game, Api, Store, Config…), Seo.php and src/games/ role definitions
+src/      PHP engines (Game, Impostor, Api, Store, Config…), Seo.php and src/games/ role definitions
 config/   configuration
 data/     runtime game files (not served)
 tests/    dependency-free test runner

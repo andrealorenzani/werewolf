@@ -37,8 +37,8 @@ final class Store
         return "{$this->dir}/$id.$ext";
     }
 
-    /** Create a new game with a fresh unique id. @param callable(string):Game $factory */
-    public function create(callable $factory): Game
+    /** Create a new game with a fresh unique id. @param callable(string):Room $factory */
+    public function create(callable $factory): Room
     {
         if (random_int(1, 20) === 1) {
             $this->sweep();
@@ -160,9 +160,9 @@ final class Store
     }
 
     /**
-     * Run $fn(Game) under an exclusive lock; the game is tick()ed first and saved afterwards if it
+     * Run $fn(Room) under an exclusive lock; the game is tick()ed first and saved afterwards if it
      * became dirty. Returns whatever $fn returns.
-     * @template T @param callable(Game):T $fn @return T
+     * @template T @param callable(Room):T $fn @return T
      */
     public function mutate(string $id, callable $fn, array $deps = []): mixed
     {
@@ -175,7 +175,7 @@ final class Store
                 }
                 throw new GameError('Game not found.');
             }
-            $game = Game::fromArray($data, $deps);
+            $game = Rooms::load($data, $deps);
             $game->tick();
             $result = $fn($game);
             if ($game->dirty) {
@@ -190,7 +190,7 @@ final class Store
     /**
      * Delete a game for good under the same lock writers use. $guard(Game) runs first and may throw
      * (e.g. GameError when the caller is not allowed); nothing is deleted in that case.
-     * @param callable(Game):void $guard
+     * @param callable(Room):void $guard
      */
     public function remove(string $id, callable $guard, array $deps = []): void
     {
@@ -201,14 +201,14 @@ final class Store
                 $this->unlinkGame($id);
                 throw new GameError('Game not found.');
             }
-            $guard(Game::fromArray($data, $deps));
+            $guard(Rooms::load($data, $deps));
             $this->unlinkGame($id);
         } finally {
             $this->unlock($lock);
         }
     }
 
-    private function write(Game $game): void
+    private function write(Room $game): void
     {
         $path = $this->path($game->id);
         $tmp = $path . '.' . bin2hex(random_bytes(4)) . '.tmp';

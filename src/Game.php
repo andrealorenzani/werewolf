@@ -13,7 +13,7 @@ namespace Wm;
  * absolute time and tick() applies expired deadlines at the start of every request.
  * A Game is loaded from / saved to JSON by Store (see toArray / fromArray).
  */
-final class Game
+final class Game implements Room
 {
     private const PRESENCE_MS = 15000;
     private const CHAT_KEEP = 300;        // messages kept in the chat history
@@ -264,6 +264,11 @@ final class Game
     private function isDayZero(): bool
     {
         return $this->phase === 'discussion' && $this->round === 0;
+    }
+
+    public function joinedCount(): int
+    {
+        return count($this->players);
     }
 
     /** Can someone still take a seat? Lobby, or day 0 (before the first night). */

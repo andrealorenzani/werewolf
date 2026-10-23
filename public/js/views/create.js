@@ -3,6 +3,7 @@ import { getProfile, saveProfile, saveSession } from '../store.js';
 import { esc, toast } from '../util.js';
 import { profileFields, bindProfile } from '../avatar.js';
 import { buildSetupForm } from './setup.js';
+import { buildImpostorSetup } from './impostor-setup.js';
 import { bindRulesLinks } from '../rules.js';
 
 export async function renderCreate(app, type, navigate) {
@@ -22,7 +23,8 @@ export async function renderCreate(app, type, navigate) {
   bindRulesLinks(app);
   const getProfileValues = bindProfile(app, profile);
   const submit = app.querySelector('[data-submit]');
-  const setup = buildSetupForm(def, { name: `${def.title} night`, description: '' }, () => { submit.disabled = !!setup.validate(); });
+  const build = def.engine === 'impostor' ? buildImpostorSetup : buildSetupForm;
+  const setup = build(def, { name: `${def.title} night`, description: '' }, () => { submit.disabled = !!setup.validate(); });
   app.querySelector('[data-setup]').appendChild(setup.el);
   submit.disabled = !!setup.validate();
   app.querySelector('[data-back]').addEventListener('click', () => navigate(''));

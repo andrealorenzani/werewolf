@@ -68,11 +68,11 @@ final class Api
     {
         $type = is_string($in['type'] ?? null) ? $in['type'] : '';
         $def = Games::get($type) ?? throw new GameError('Unknown game type.');
-        $config = Config::normalize($def, $in);
+        $config = Rooms::config($def, $in);
         Config::profile($in['player'] ?? null); // validate before allocating anything
         $host = null;
         $game = $this->store->create(function (string $id) use ($type, $config, $in, &$host) {
-            $g = Game::create($id, $type, $config, $this->deps);
+            $g = Rooms::create($id, $type, $config, $this->deps);
             $host = $g->addPlayer($in['player'] ?? null);
             return $g;
         });
@@ -85,13 +85,14 @@ final class Api
             $this->store->sweep(); // housekeeping without a cron job
         }
         $d = $this->store->peekLive($id) ?? throw new GameError('Game not found.');
+        $room = Rooms::load($d, $this->deps);
         return ['id' => $d['id'], 'type' => $d['type'], 'name' => $d['name'], 'description' => $d['description'],
-            'phase' => $d['phase'], 'joinable' => Game::fromArray($d, $this->deps)->joinable(), 'joined' => count($d['players']), 'total' => $d['total']];
+            'phase' => $d['phase'], 'joinable' => $room->joinable(), 'joined' => $room->joinedCount(), 'total' => $d['total']];
     }
 
     private function join(string $id, mixed $profile): array
     {
-        return $this->store->mutate($id, function (Game $g) use ($profile) {
+        return $this->store->mutate($id, function (Room $g) use ($profile) {
             $p = $g->addPlayer($profile);
             return ['id' => $g->id, 'playerId' => $p->id, 'token' => $p->token];
         }, $this->deps);
@@ -123,7 +124,7 @@ final class Api
             && ($ended || $t - $me['lastSeen'] < 5000)) {
             return ['unchanged' => true, 'now' => $t];
         }
-        return $this->store->mutate($id, function (Game $g) use ($token, $since) {
+        return $this->store->mutate($id, function (Room $g) use ($token, $since) {
             $p = $g->playerByToken($token) ?? throw new GameError('You were removed from this game.');
             $g->touch($p);
             return $g->version === $since ? ['unchanged' => true, 'now' => $g->now()] : ['state' => $g->viewFor($p->id)];
@@ -133,14 +134,14 @@ final class Api
     private function avatars(string $id, string $token, mixed $ids): array
     {
         $d = $this->store->peekLive($id) ?? throw new GameError('Game not found.');
-        $g = Game::fromArray($d, $this->deps);
+        $g = Rooms::load($d, $this->deps);
         $g->playerByToken($token) ?? throw new GameError('Session expired. Please join again.');
         return ['avatars' => (object)$g->avatars(is_array($ids) ? array_slice($ids, 0, 40) : [])];
     }
 
     private function deleteGame(string $id, string $token): array
     {
-        $this->store->remove($id, function (Game $g) use ($token) {
+        $this->store->remove($id, function (Room $g) use ($token) {
             $p = $g->playerByToken($token) ?? throw new GameError('Session expired. Please join again.');
             if (!$g->canDelete($p->id)) {
                 throw new GameError('Only the host can delete this game.');
@@ -154,7 +155,7 @@ final class Api
         if (!is_array($cmd)) {
             throw new GameError('Bad command.');
         }
-        return $this->store->mutate($id, function (Game $g) use ($token, $cmd) {
+        return $this->store->mutate($id, function (Room $g) use ($token, $cmd) {
             $p = $g->playerByToken($token) ?? throw new GameError('You were removed from this game.');
             $g->touch($p);
             $g->command($p->id, $cmd);

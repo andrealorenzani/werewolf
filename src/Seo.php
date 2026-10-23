@@ -10,19 +10,19 @@ namespace Wm;
  */
 final class Seo
 {
-    public const SITE_NAME = 'Werewolf & Mafia';
+    public const SITE_NAME = 'Werewolf, Mafia & Impostor';
 
     /** Every public (indexable) page: path => metadata. Anything not listed here must be noindex. */
     public const PAGES = [
         '/' => [
-            'title' => 'Play Werewolf & Mafia Online Free with Friends',
-            'description' => 'Play Werewolf and Mafia online for free in your browser. Create a game, share the code or QR, and let the server moderate. No sign-up.',
-            'updated' => '2026-10-11',
+            'title' => 'Play Werewolf, Mafia & Impostor Online Free',
+            'description' => 'Play Werewolf, Mafia and Impostor online for free in your browser. Create a game, share the code or QR, and let the server moderate. No sign-up.',
+            'updated' => '2026-10-23',
         ],
         '/how-to-play' => [
-            'title' => 'How to Play Werewolf & Mafia: Rules and Roles',
-            'description' => 'Learn the rules of Werewolf and Mafia: day and night phases, voting, winning conditions and every role explained, from Seer to Godfather.',
-            'updated' => '2026-10-18',
+            'title' => 'How to Play Werewolf, Mafia & Impostor: Rules',
+            'description' => 'Learn the rules of Werewolf, Mafia and Impostor: day and night phases, voting, scoring and every role explained, from Seer to Godfather.',
+            'updated' => '2026-10-23',
         ],
     ];
 
@@ -85,7 +85,7 @@ final class Seo
             . '<meta property="og:image" content="' . $e($img) . '">' . "\n"
             . '<meta property="og:image:width" content="1200">' . "\n"
             . '<meta property="og:image:height" content="630">' . "\n"
-            . '<meta property="og:image:alt" content="Werewolf &amp; Mafia: free online social deduction games">' . "\n"
+            . '<meta property="og:image:alt" content="Werewolf, Mafia &amp; Impostor: free online party games">' . "\n"
             . '<meta name="twitter:card" content="summary_large_image">' . "\n"
             . '<meta name="twitter:title" content="' . $e($title) . '">' . "\n"
             . '<meta name="twitter:description" content="' . $e($page['description']) . '">' . "\n"

@@ -504,3 +504,113 @@ T::test('api: the corrupt chooses a side via cmd; second time, wrong role and in
     T::true(!array_key_exists('side', $r['state']['me']));
     rmTree($dir);
 });
+
+// ---------- Impostor through the API ----------
+function apiImpostor(Api $api, array $settings = [], int $players = 4): array
+{
+    [$s, $c] = $api->handle('create', [
+        'type' => 'impostor', 'name' => 'Odd one', 'seats' => 8, 'settings' => $settings, 'player' => ['name' => 'Host'],
+    ]);
+    T::same(200, $s);
+    $tokens = [$c['token']];
+    for ($i = 1; $i < $players; $i++) {
+        [$s, $j] = $api->handle('join', ['id' => $c['id'], 'player' => ['name' => "P$i"]]);
+        T::same(200, $s);
+        $tokens[] = $j['token'];
+    }
+    return [$c['id'], $tokens];
+}
+
+T::test('api impostor: defs list the game, create validates, info reports playing seats', function () {
+    [$store, $dir] = tmpStore();
+    $api = new Api($store);
+    [, $defs] = $api->handle('defs', []);
+    $d = array_column($defs['games'], null, 'id');
+    T::same('impostor', $d['impostor']['engine']);
+    T::same('classic', $d['werewolf']['engine']);
+    [$s, $r] = $api->handle('create', ['type' => 'impostor', 'name' => 'X', 'seats' => 2, 'player' => ['name' => 'H']]);
+    T::same(400, $s);
+    [$s] = $api->handle('create', ['type' => 'impostor', 'name' => 'X', 'player' => ['name' => '']]);
+    T::same(400, $s);
+    [$id, $tokens] = apiImpostor($api, ['hostPlays' => false], 3);
+    [$s, $info] = $api->handle('info', ['id' => $id]);
+    T::same(200, $s);
+    T::same('impostor', $info['type']);
+    T::same(2, $info['joined']); // the non-playing host is not a player
+    T::same(8, $info['total']);
+    T::true($info['joinable']);
+    rmTree($dir);
+});
+
+T::test('api impostor: a full game over the API, polls are unchanged until something happens', function () {
+    $clock = new Clock();
+    [$store, $dir] = tmpStore($clock);
+    $api = new Api($store, ['clock' => $clock, 'rng' => fn() => 0.5]);
+    [$id, $tokens] = apiImpostor($api, ['turns' => 1]);
+    $cmd = fn(string $tok, array $body) => $api->handle('cmd', ['id' => $id, 'token' => $tok, 'cmd' => $body]);
+    $state = fn(string $tok, int $v = -1) => $api->handle('state', ['id' => $id, 'token' => $tok, 'v' => $v]);
+    [$s, $r] = $cmd($tokens[1], ['t' => 'start']);
+    T::same(400, $s);
+    [$s, $r] = $cmd($tokens[0], ['t' => 'start']);
+    T::same(200, $s);
+    T::same('answer', $r['state']['phase']);
+    $v = $r['state']['version'];
+    [, $u] = $state($tokens[1], $v);
+    T::same(true, $u['unchanged']);
+    $clock->ms += 3000;
+    [, $u] = $state($tokens[1], $v + 100);
+    T::true(isset($u['state']) || isset($u['unchanged']));
+    foreach ($tokens as $i => $t) {
+        [$s, $r] = $cmd($t, ['t' => 'answer', 'text' => "a$i"]);
+        T::same(200, $s);
+    }
+    [, $r] = $state($tokens[0]);
+    T::same('reveal', $r['state']['phase']);
+    T::same($r['state']['turn']['speaker'] !== null, true);
+    // timers are lazy on the poll path: after the speaker timeout the reveal moves on
+    $v = $r['state']['version'];
+    $clock->ms += Wm\Impostor::SPEAK_MS + 1;
+    [, $r] = $state($tokens[0], $v);
+    T::same(1, $r['state']['turn']['index']);
+    [$s, $r] = $cmd($tokens[0], ['t' => 'bogus']);
+    T::same(400, $s);
+    [$s, $r] = $cmd('badtoken', ['t' => 'start']);
+    T::same(400, $s);
+    rmTree($dir);
+});
+
+T::test('api impostor: avatars, leave and delete work for the new engine', function () {
+    [$store, $dir] = tmpStore();
+    $api = new Api($store);
+    $avatar = 'data:image/jpeg;base64,/9j/4AAQ';
+    [, $c] = $api->handle('create', ['type' => 'impostor', 'name' => 'A', 'player' => ['name' => 'Host', 'avatar' => $avatar]]);
+    [, $j] = $api->handle('join', ['id' => $c['id'], 'player' => ['name' => 'Guest']]);
+    [, $r] = $api->handle('state', ['id' => $c['id'], 'token' => $j['token'], 'v' => -1]);
+    $json = json_encode($r['state']);
+    T::false(str_contains($json, $c['token']) || str_contains($json, $j['token']) || str_contains($json, $avatar));
+    [, $a] = $api->handle('avatars', ['id' => $c['id'], 'token' => $j['token'], 'ids' => [$c['playerId']]]);
+    T::same($avatar, ((array)$a['avatars'])[$c['playerId']]);
+    [, $l] = $api->handle('cmd', ['id' => $c['id'], 'token' => $j['token'], 'cmd' => ['t' => 'leave']]);
+    T::same(true, $l['left']);
+    [$s] = $api->handle('delete', ['id' => $c['id'], 'token' => $j['token']]);
+    T::same(400, $s);
+    [$s, $d] = $api->handle('delete', ['id' => $c['id'], 'token' => $c['token']]);
+    T::same(200, $s);
+    [$s] = $api->handle('info', ['id' => $c['id']]);
+    T::same(400, $s);
+    rmTree($dir);
+});
+
+T::test('api impostor: classic saves still load through Rooms::load and the classic API is unchanged', function () {
+    [$store, $dir] = tmpStore();
+    $api = new Api($store);
+    [, $c] = $api->handle('create', ['type' => 'mafia', 'name' => 'M', 'roles' => ['citizen' => 3, 'mafioso' => 1], 'player' => ['name' => 'Host']]);
+    $raw = $store->peek($c['id']);
+    T::true(Wm\Rooms::load($raw) instanceof Wm\Game);
+    T::same('mafia', $raw['type']);
+    [$s, $info] = $api->handle('info', ['id' => $c['id']]);
+    T::same(1, $info['joined']);
+    $impostor = Wm\Rooms::create('ZZZZZZ', 'impostor', Wm\Rooms::config(Wm\Games::get('impostor'), ['name' => 'I']));
+    T::true($impostor instanceof Wm\Impostor);
+    rmTree($dir);
+});

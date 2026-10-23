@@ -6,6 +6,8 @@ require __DIR__ . '/../src/bootstrap.php';
 use Wm\Config;
 use Wm\Game;
 use Wm\Games;
+use Wm\Impostor;
+use Wm\ImpostorConfig;
 use Wm\Player;
 
 /** Tiny test harness (no PHPUnit needed on the server). */
@@ -117,4 +119,25 @@ function killAct(Game $g, Player|array $killers, Player $target): void
     foreach ($killers as $k) {
         act($g, $k, ['confirm' => true]);
     }
+}
+
+/**
+ * An Impostor room. The host is $ps[0]; with settings hostPlays=false the host does not play and $ps[1..$n] are the
+ * $n players. Unless $lobby, the game is started. Deterministic rng by default (override with $rng).
+ * @return array{0:Impostor,1:Player[],2:Clock}
+ */
+function startedImpostor(array $settings = [], int $n = 5, bool $lobby = false, ?callable $rng = null, int $seats = 10): array
+{
+    $cfg = ImpostorConfig::normalize(Games::get('impostor'), ['name' => 'T', 'seats' => $seats, 'settings' => $settings]);
+    $clock = new Clock();
+    $g = Impostor::create('TESTAB', 'impostor', $cfg, ['rng' => $rng ?? fn() => 0.5, 'clock' => $clock]);
+    $ps = [];
+    $count = ($settings['hostPlays'] ?? true) === false ? $n + 1 : $n;
+    for ($i = 0; $i < $count; $i++) {
+        $ps[] = $g->addPlayer(['name' => "p$i"]);
+    }
+    if (!$lobby) {
+        $g->command($ps[0]->id, ['t' => 'start']);
+    }
+    return [$g, $ps, $clock];
 }
