@@ -1,276 +1,288 @@
 # Impostor question pool. APPEND-ONLY: never edit, renumber, reorder or remove an existing pair
 # (old saved games refer to pairs by position). Add new pairs at the end with the next number.
+# Pairs 1-21 are the maintainer's reference samples and must always stay (see .claude/skills/impostor-questions).
 #
 # Format: a line "N. question for everybody" followed by "N-impostor. similar question for the Impostor".
 # Blank lines and lines starting with # are ignored. Length of each question: 5 to 140 characters.
 
-1. What is the best pizza topping?
-1-impostor. What is the best sandwich filling?
+1. How would you like to die?
+1-impostor. What disease would you least want to get?
 
-2. Name a food you would eat for breakfast.
-2-impostor. Name a food you would eat for dinner.
+2. What song do you want played at your funeral?
+2-impostor. What song would you make love to?
 
-3. What is your favourite fruit?
-3-impostor. What is your favourite vegetable?
+3. What's your most important trait in a romantic partner?
+3-impostor. What is the legal age of drinking in your country?
 
-4. Which animal would make the best pet?
-4-impostor. Which animal would make the best mascot?
+4. What is the first thing you'd do after getting out of prison?
+4-impostor. If you find out the world was ending in one hour, what would you do?
 
-5. Where would you spend a perfect holiday?
-5-impostor. Where would you spend a perfect weekend?
+5. What's your biggest turn off?
+5-impostor. What's your biggest turn on?
 
-6. What is the best thing to do on a rainy day?
-6-impostor. What is the best thing to do on a snowy day?
+6. How old were you when you had your first kiss?
+6-impostor. How old were you when you lost your first baby thoot?
 
-7. Name something you always carry in your bag.
-7-impostor. Name something you always keep in your pocket.
+7. Who is your hall pass?
+7-impostor. Who is the best but ugliest singer alive?
 
-8. What is your favourite season?
-8-impostor. What is your favourite month?
+8. If you had to give your genitals a nickname, what would it be?
+8-impostor. If you were a little person, pro wrestler, what would your stage name be?
 
-9. Which superpower would you choose?
-9-impostor. Which magical object would you choose?
+9. How many times have you shit yourself as an adult?
+9-impostor. How many times per week do you shower?
 
-10. What is the best film you have seen this year?
-10-impostor. What is the best series you have watched this year?
+10. What is your favorite conspiracy theory?
+10-impostor. Name a disaster that had a lot of deaths
 
-11. Name a sport you enjoy watching.
-11-impostor. Name a sport you enjoy playing.
+11. Where on earth would you like to go on a content making holiday?
+11-impostor. Which international destination is like Hell on earth for you?
 
-12. What is the best ice cream flavour?
-12-impostor. What is the best cake flavour?
+12. How much money would you need to retire at your age?
+12-impostor. What is the average wage in your home country?
 
-13. What would you cook for ten guests?
-13-impostor. What would you order for ten guests?
+13. What is the longest you have ever gone without changing your undies?
+13-impostor. What's the longest time you've gone without a shower?
 
-14. Which city would you most like to visit?
-14-impostor. Which country would you most like to visit?
+14. Which other player has the juiciest secret you know?
+14-impostor. Who is the hottest of the players?
 
-15. What is the first thing you do in the morning?
-15-impostor. What is the last thing you do at night?
+15. What is the worst intrusive thought you have ever had?
+15-impostor. What is the most horrific crime you could do to another person?
 
-16. What is your favourite board game?
-16-impostor. What is your favourite video game?
+16. *Bang!!!* Another player has been killed. If you could choose anybody in the world to replace him in the game, who would it be?
+16-impostor. Name an Italian public character of your choice
 
-17. Name a job you would hate to have.
-17-impostor. Name a job you would love to have.
+17. Where is the best place for a first date?
+17-impostor. Where is the worst place to be with your pants down?
 
-18. What is the most useful app on your phone?
-18-impostor. What is the most fun app on your phone?
+18. Rate your kissing out of 10
+18-impostor. How many fingers could you fit in your mouth
 
-19. Which musical instrument do you like the sound of?
-19-impostor. Which musical instrument would you like to learn?
+19. What is something you judge other people for?
+19-impostor. What's something you worry other people judge you for?
 
-20. What is your favourite smell?
-20-impostor. What is your favourite sound?
+20. Write a famous quote
+20-impostor. If you could be remembered for one sentence, what would it be?
 
-21. What do you usually drink with dinner?
-21-impostor. What do you usually drink at breakfast?
+21. If you could have one wish granted right now, what would it be?
+21-impostor. What could be able to end human civilisation?
 
-22. Name a colour that makes you happy.
-22-impostor. Name a colour that makes you calm.
+22. How many exes do you still have saved in your phone?
+22-impostor. How many unread emails do you have right now?
 
-23. What is the best gift you ever received?
-23-impostor. What is the best gift you ever gave?
+23. How many minutes a day do you spend on the toilet?
+23-impostor. How many minutes a day do you spend brushing your teeth?
 
-24. Name something you would take to a desert island.
-24-impostor. Name something you would take to the Arctic.
+24. On a scale of 1 to 10, how good are you in bed?
+24-impostor. On a scale of 1 to 10, how good are you at parallel parking?
 
-25. What was your favourite childhood toy?
-25-impostor. What was your favourite childhood cartoon?
+25. At what age do you think you will die?
+25-impostor. At what age do you want to retire?
 
-26. Which famous person would you invite to dinner?
-26-impostor. Which famous person would you invite to a party?
+26. How many people could you beat in a fight?
+26-impostor. How many slices of pizza can you eat in one sitting?
 
-27. What would you do with a free afternoon?
-27-impostor. What would you do with a free week?
+27. How many drinks does it take before you text your ex?
+27-impostor. How many drinks does it take before you forget your own name?
 
-28. What is the best way to get to work?
-28-impostor. What is the best way to travel abroad?
+28. How many people in this room would you sleep with?
+28-impostor. How many people in this room would you lend money to?
 
-29. What is your favourite type of weather?
-29-impostor. What is your favourite time of day?
+29. How many children do you want to have?
+29-impostor. How many cats is too many cats?
 
-30. What is the most delicious soup?
-30-impostor. What is the most delicious pasta?
+30. How long could you survive a zombie apocalypse?
+30-impostor. How long could you survive without your phone?
 
-31. Name a book everybody should read.
-31-impostor. Name a film everybody should watch.
+31. How long was your longest relationship?
+31-impostor. How long was your longest hangover?
 
-32. What is your favourite cheese?
-32-impostor. What is your favourite bread?
+32. What time of day do you feel sexiest?
+32-impostor. What time of day do you usually go to the toilet?
 
-33. Which animal is the funniest?
-33-impostor. Which animal is the scariest?
+33. Which player would survive longest in a zombie apocalypse?
+33-impostor. Which player would turn into a zombie without anyone noticing?
 
-34. What is the best thing about summer?
-34-impostor. What is the best thing about winter?
+34. Which player would you trust least with your unlocked phone?
+34-impostor. Which player would you trust most to look after your kids?
 
-35. Which room in a house do you like most?
-35-impostor. Which piece of furniture do you like most?
+35. Which player is most likely to end up in prison?
+35-impostor. Which player is most likely to become a millionaire?
 
-36. What do you do to relax after a long day?
-36-impostor. What do you do to wake up after a long night?
+36. Which player has the weirdest browser history?
+36-impostor. Which player has the messiest bedroom?
 
-37. What is your favourite holiday or festival?
-37-impostor. What is your favourite family tradition?
+37. Which player would be the worst person to be stuck in a lift with?
+37-impostor. Which player would you hire as your lawyer?
 
-38. Name a snack you could eat every day.
-38-impostor. Name a dessert you could eat every day.
+38. Which celebrity would you sleep with for a million euros?
+38-impostor. Which celebrity would you want as your dentist?
 
-39. Where would you like to live when you retire?
-39-impostor. Where would you like to live as a student?
+39. Which cartoon character were you secretly in love with?
+39-impostor. Which cartoon character scared you as a child?
 
-40. What is a talent you wish you had?
-40-impostor. What is a skill you are proud of?
+40. What would be the title of your sex tape?
+40-impostor. What would be the title of your autobiography?
 
-41. Which vehicle would you love to drive?
-41-impostor. Which vehicle would you love to ride in?
+41. What would your stage name be as a stripper?
+41-impostor. What would your name be as a Mafia boss?
 
-42. What is your favourite part of a birthday party?
-42-impostor. What is your favourite part of a wedding?
+42. What is the most embarrassing thing that could be written on your tombstone?
+42-impostor. What is the most embarrassing thing that could be written on your CV?
 
-43. Name a word that makes you smile.
-43-impostor. Name a word that annoys you.
+43. What would your honest Tinder bio say?
+43-impostor. What would your honest obituary say?
 
-44. What would you grow in a garden?
-44-impostor. What would you build in a garden?
+44. What would the newspaper headline be if you got arrested?
+44-impostor. What would the newspaper headline be if you won the lottery?
 
-45. Which school subject did you enjoy most?
-45-impostor. Which school subject did you find hardest?
+45. Describe your love life in three words.
+45-impostor. Describe your Monday mornings in three words.
 
-46. What is your favourite way to have coffee or tea?
-46-impostor. What is your favourite way to have eggs?
+46. What is the first rule of your future cult?
+46-impostor. What is the first rule of your future restaurant?
 
-47. Name a place where you feel at peace.
-47-impostor. Name a place where you feel full of energy.
+47. What is the worst thing to say during sex?
+47-impostor. What is the worst thing to say during a job interview?
 
-48. What is the best thing to find in a treasure chest?
-48-impostor. What is the best thing to find in a fridge at midnight?
+48. What is the worst thing to hear your pilot say mid-flight?
+48-impostor. What is the worst thing to hear your surgeon say mid-operation?
 
-49. What is the worst thing to forget on holiday?
-49-impostor. What is the worst thing to forget on a work day?
+49. What is the worst thing to shout at a wedding when asked if anyone objects?
+49-impostor. What is the worst thing to say during a funeral speech?
 
-50. Which board game piece would you be?
-50-impostor. Which chess piece would you be?
+50. What is the worst name you could give a baby?
+50-impostor. What is the worst name you could give a dog?
 
-51. What is your favourite thing to do on a Sunday?
-51-impostor. What is your favourite thing to do on a Friday night?
+51. What is the worst name for a strip club?
+51-impostor. What is the worst name for a kindergarten?
 
-52. What is a good name for a pet fish?
-52-impostor. What is a good name for a pet dog?
+52. What is the worst pickup line you have heard?
+52-impostor. What is the worst excuse you have heard for being late?
 
-53. Which fairy-tale character would you like to meet?
-53-impostor. Which cartoon character would you like to meet?
+53. What is the worst lie you told on a date?
+53-impostor. What is the worst lie you told in a job interview?
 
-54. What would you pack for a picnic?
-54-impostor. What would you pack for a long train ride?
+54. What is the most awkward thing your parents could walk in on?
+54-impostor. What is the most awkward thing your boss could walk in on?
 
-55. What is your favourite thing to wear?
-55-impostor. What is your favourite thing to collect?
+55. What is the worst thing you have ever done in a lift?
+55-impostor. What is the worst thing you have ever done on a plane?
 
-56. What is the best thing about your hometown?
-56-impostor. What is the best thing about your neighbourhood?
+56. What is the weirdest place you have ever peed?
+56-impostor. What is the weirdest place you have ever fallen asleep?
 
-57. Name a fruit that is great in a smoothie.
-57-impostor. Name a fruit that is great in a pie.
+57. What is the weirdest place you have ever hidden something?
+57-impostor. What is the weirdest place you have ever found someone's underwear?
 
-58. What is the best way to celebrate a win?
-58-impostor. What is the best way to cheer up after a loss?
+58. What is the most desperate thing you have done to get someone's attention?
+58-impostor. What is the most desperate thing you have done to get a free meal?
 
-59. Name a thing you would find at the beach.
-59-impostor. Name a thing you would find in a forest.
+59. What is the most illegal thing you have ever done?
+59-impostor. What is the most illegal thing you would do for a million euros?
 
-60. Name a thing you would find in a kitchen drawer.
-60-impostor. Name a thing you would find in a toolbox.
+60. What is the last lie you told?
+60-impostor. What is the last thing you stole?
 
-61. What is your favourite shape?
-61-impostor. What is your favourite number?
+61. What did you do the last time you were home alone?
+61-impostor. What did you do the last time you were drunk?
 
-62. What makes a good neighbour?
-62-impostor. What makes a good roommate?
+62. What is your most embarrassing Google search?
+62-impostor. What is your most frequent Google search?
 
-63. What would be a great theme for a party?
-63-impostor. What would be a great theme for a costume?
+63. What do you say to your reflection when nobody is around?
+63-impostor. What do you say to your pet when nobody is around?
 
-64. Name a famous landmark you would like to see.
-64-impostor. Name a famous museum you would like to see.
+64. What is the cringiest thing you did as a teenager?
+64-impostor. What is the cringiest thing your parents still do?
 
-65. What is the nicest thing to find in your mailbox?
-65-impostor. What is the nicest thing to find in your pocket?
+65. Name something you pretended to like to impress someone.
+65-impostor. Name something you pretended to be an expert in.
 
-66. Which dessert is best served hot?
-66-impostor. Which dessert is best served cold?
+66. What is the most embarrassing thing in your room right now?
+66-impostor. What is the most valuable thing in your room right now?
 
-67. What is your favourite way to spend a long train journey?
-67-impostor. What is your favourite way to spend a long flight?
+67. What is your most toxic trait?
+67-impostor. What is your most attractive trait?
 
-68. Name something that is round.
-68-impostor. Name something that is square.
+68. What is the pettiest thing you have ever done?
+68-impostor. What is the pettiest thing anyone has ever done to you?
 
-69. Name an animal that lives in the sea.
-69-impostor. Name an animal that lives in the sky.
+69. What is your go-to excuse for leaving a party early?
+69-impostor. What is your go-to excuse for not texting back?
 
+70. What is the dumbest reason a relationship could end?
+70-impostor. What is the dumbest reason a war could start?
 
-70. How would you like to die?
-70-impostor. What disease would you least want to get?
+71. Which relative would you least want to see naked?
+71-impostor. Which relative would you most want to win the lottery?
 
-71. What song do you want played at your funeral?
-71-impostor. What song would you make love to?
+72. What is the best way to get revenge on an ex?
+72-impostor. What is the best way to get revenge on a noisy neighbour?
 
-72. What's your most important trait in a romantic partner?
-72-impostor. What is the legal age of drinking in your country?
+73. What is the dirtiest thing you have ever done for money?
+73-impostor. What is the dirtiest thing you have ever found in your home?
 
-73. What is the first thing you'd do after getting out of prison?
-73-impostor. If you find out the world was ending in one hour, what would you do?
+74. What would you do if you were invisible for a day?
+74-impostor. What would you do if you were the president for a day?
 
-74. What's your biggest turn off?
-74-impostor. What's your biggest turn on?
+75. What is the worst superpower you can think of?
+75-impostor. What is the worst thing to be allergic to?
 
-75. How old were you when you had your first kiss?
-75-impostor. How old were you when you lost your first baby thoot?
+76. What would be your last meal on death row?
+76-impostor. What would be your last meal before starting a diet?
 
-76. Who is your hall pass?
-76-impostor. Who is the best but ugliest singer alive?
+77. Name something you would never do for a million euros.
+77-impostor. Name something you would happily do for free.
 
-77. If you had to give your genitals a nickname, what would it be?
-77-impostor. If you were a little person, pro westler, what would your stage name be?
+78. Which body part would you swap for a better one?
+78-impostor. Which body part do you wash last?
 
-78. How many times have you shit yourself as an adult?
-78-impostor. How many times per week do you shower?
+79. What is the worst smell you have ever caused?
+79-impostor. What is the worst smell you have ever endured?
 
-79. What is your favorite conspiracy theory?
-79-impostor. Name a disaster that had a lot of deaths
+80. What is the most awkward place to run into your ex?
+80-impostor. What is the most awkward place to run into your old teacher?
 
-80. Where on earth would you like to go on a content making holiday?
-80-impostor. Which international destination is like Hell on earth for you?
+81. Where would you least want to run out of toilet paper?
+81-impostor. Where would you least want to get a flat tyre?
 
-81. How much money would you need to retire at your age?
-81-impostor. What is the average wage in your home country?
+82. What song is guaranteed to ruin a party?
+82-impostor. What song is guaranteed to fill the dance floor?
 
-82. What is the longest you have ever gone without changing your undies?
-82-impostor. What's the longest time you've gone without a shower?
+83. What is your most useless talent?
+83-impostor. What is the most useless thing you own?
 
-83. Which other player has the juiciest secret you know?
-83-impostor. Who is the hottest of the players?
+84. Which animal would you reincarnate as?
+84-impostor. Which animal would you never want to fight?
 
-84. What is the worst intrusive thought you have ever had?
-84-impostor. What is the most horrific crime you could do to another person?
+85. What is the strangest thing you have eaten when drunk?
+85-impostor. What is the strangest thing you have eaten on holiday?
 
-85. *Bang!!!* Another player has been killed. If you could choose anybody in the world to replace him in the game, who would it be?
-85-impostor. Name an Italian public character of your choice
+86. What is the most awkward thing you have said to a doctor?
+86-impostor. What is the most awkward thing you have said to a taxi driver?
 
-86. Where is the best place for a first date?
-86-impostor. Where is the worst place to be with your pants down?
+87. What is the longest you have hidden in the bathroom to avoid someone?
+87-impostor. What is the longest you have waited for a late friend?
 
-87. Rate your kissing out of 10
-87-impostor. How many fingers could you fit in your mouth
+88. What is the most you have ever spent on something stupid?
+88-impostor. What is the most you have ever lost betting?
 
-88. What is something you judge other people for?
-88-impostor. What's something you worry other people judge you for?
+89. How many times have you been dumped by text?
+89-impostor. How many times have you been to the dentist this year?
 
-89. Write a famous quote
-89-impostor. If you could be remembered for one sentence, what would it be?
+90. What is the rudest word you know in a foreign language?
+90-impostor. What is the only word you know in a foreign language?
 
-90. If you could have one wish granted right now, what would it be?
-90-impostor. What could be able to end human civilisation?
+91. What is the weirdest thing you have Googled at 3 a.m.?
+91-impostor. What is the weirdest thing you have ordered online at 3 a.m.?
+
+92. What is the worst tattoo you could get?
+92-impostor. What is the worst place to get a tattoo?
+
+93. What would you save first from a burning house, apart from people?
+93-impostor. What would you steal first from a burning house?
+
+94. What is the sexiest word in your language?
+94-impostor. What is the ugliest word in your language?

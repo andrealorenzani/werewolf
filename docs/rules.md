@@ -134,7 +134,7 @@ Default set: 5 Citizens, 1 Mafioso (other characters 0).
 - **God mode:** if the host does not play, they never answer or vote but see everything: the whole current turn live (questions, who the Impostor is, answers and votes) and every question pair. They moderate (skip, open the vote). Players can never see this.
 
 ### Questions
-- **Built-in pool:** the server picks the configured number of pairs at random.
+- **Built-in pool:** the server picks the configured number of pairs at random. The built-in questions have an adult tone (crude-but-light, confessional humour; no slurs, minors, politics or graphic sexual detail): use the players or host source for a family audience.
 - **Written by the host (writing phase):** only if the host does not play. They add pairs (up to 50; 5–140 characters each, the two must differ, no repeated normal question) and can delete them; nobody else sees them. The host starts the game once there are at least as many pairs as turns; the turns use that many pairs picked at random.
 - **Written by the players (writing phase):** each playing player writes a pair (the question for everybody, and a similar one for the Impostor; 5–140 characters each, the two must differ) and **confirms** it. The game starts by itself when every playing player has confirmed; the host can also force the start with the pairs confirmed so far (at least one). A non-playing host may write a pair too: it is used if confirmed, dropped otherwise. Unconfirmed pairs are dropped. There is one turn per pair, in random order. The author of a pair answers the normal question and is **never the Impostor** of that turn. Authors see only their own pair while writing.
 

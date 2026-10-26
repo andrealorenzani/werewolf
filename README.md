@@ -4,7 +4,7 @@ Browser-based, turn-based social-deduction games for 4–30 players, written in 
 
 - 🐺 **Werewolf** – villagers hunt the werewolves hiding among them.
 - 🕴️ **Mafia** – the town hunts the criminals who run it.
-- 🎭 **Impostor** – everyone answers the same question except one player, who gets a similar one: spot the odd one out and score points when you blend in. Built-in questions (a markdown file), questions written by the players or by the moderating host; optional points for those who find the Impostor; the host may play or just moderate (sees everything). No night phase, no chat.
+- 🎭 **Impostor** – everyone answers the same question except one player, who gets a similar one: spot the odd one out and score points when you blend in. Built-in questions (a markdown file, adult tone), questions written by the players or by the moderating host; optional points for those who find the Impostor; the host may play or just moderate (sees everything). No night phase, no chat.
 
 The server is the game master: it deals the character cards, runs the night actions, counts the votes and announces the winner. Everybody plays from their own browser (phone-friendly).
 

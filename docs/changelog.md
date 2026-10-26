@@ -2,6 +2,12 @@
 
 Newest first. Maintained by the `documenter` agent for every player- or developer-visible change.
 
+## 2026-10-26 (pool regeneration)
+### Changed
+- Built-in Impostor pool fully regenerated: 94 pairs in `resources/impostor-questions.md`; pairs 1-21 are the maintainer's reference samples (adult, crude-but-light, confessional humour), the other 73 follow their style. The old 90 pairs were replaced (deliberate exception to append-only: games in progress may show different questions). `tests/ImpostorQuestionsTest.php` pins the first 21 pairs.
+- Skill `.claude/skills/impostor-questions`: tone changed from family-friendly to adult with content limits (no slurs/hatred, no minors, no real private people, no politics/religion, no graphic sexual detail); new `samples.md` (21 samples + analysis) and `research.md` (research notes).
+- `docs/rules.md`: note that the built-in questions have an adult tone.
+
 ## 2026-10-26
 ### Added
 - Impostor: new question source `host` (only if the host does not play): the host writes up to 50 pairs in the writing phase (commands `hostadd`, `hostdel`, `forcestart`; at least `turns` pairs needed), visible only in God view.
