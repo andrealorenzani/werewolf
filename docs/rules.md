@@ -129,12 +129,13 @@ Default set: 5 Citizens, 1 Mafioso (other characters 0).
 *Setting:* a party game of similar questions. Every turn everybody privately answers the same question, except one player (the **Impostor**) who gets a similar but different one and has to blend in. There is no chat in this game: talk in person or over a call.
 
 ### Setup and lobby
-- The host sets a name/description, **seats** (4–30, default 8), **turns** (1–20, default 3; only with the built-in questions), **points** the Impostor earns (1–10, default 3), the **vote time** (30–90 s, default 60), the question source (built-in pool, or written by the players) and whether the host plays. Until the game starts the host can edit all of it; seats cannot drop below the players already joined.
+- The host sets a name/description, **seats** (4–30, default 8), **turns** (1–20, default 3; only with the built-in or the host's questions), **points** the Impostor earns (1–10, default 3), the **points for finding the Impostor** (0–9, always lower than the Impostor's, default 0), the **vote time** (30–90 s, default 60), the question source (built-in pool, written by the players, or written by the host, who must then not play) and whether the host plays. Until the game starts the host can edit all of it; seats cannot drop below the players already joined.
 - The host starts with **at least 4 playing players** (no late joiners after the start). Players join with a code / QR / link like in the other games and may edit their name or avatar at any time.
 - **God mode:** if the host does not play, they never answer or vote but see everything: the whole current turn live (questions, who the Impostor is, answers and votes) and every question pair. They moderate (skip, open the vote). Players can never see this.
 
 ### Questions
 - **Built-in pool:** the server picks the configured number of pairs at random.
+- **Written by the host (writing phase):** only if the host does not play. They add pairs (up to 50; 5–140 characters each, the two must differ, no repeated normal question) and can delete them; nobody else sees them. The host starts the game once there are at least as many pairs as turns; the turns use that many pairs picked at random.
 - **Written by the players (writing phase):** each playing player writes a pair (the question for everybody, and a similar one for the Impostor; 5–140 characters each, the two must differ) and **confirms** it. The game starts by itself when every playing player has confirmed; the host can also force the start with the pairs confirmed so far (at least one). A non-playing host may write a pair too: it is used if confirmed, dropped otherwise. Unconfirmed pairs are dropped. There is one turn per pair, in random order. The author of a pair answers the normal question and is **never the Impostor** of that turn. Authors see only their own pair while writing.
 
 ### A turn
@@ -145,7 +146,8 @@ Default set: 5 Citizens, 1 Mafioso (other characters 0).
 5. **Result:** both questions, all answers, who voted for whom and the tally are shown. Any player (or the host) presses *next* for the following turn; after the last turn the game ends.
 
 ### Scoring and winning
-- Only the Impostor scores. It is **discovered** only if it received **strictly more votes** than every other player. If discovered, nobody scores. A tie at the top that includes the Impostor, or nobody voting, means it is **not discovered** and it earns the host's points.
+- The Impostor scores only when it escapes. It is **discovered** only if it received **strictly more votes** than every other player. A tie at the top that includes the Impostor, or nobody voting, means it is **not discovered** and it earns the host's points.
+- If it is discovered, every player still in the game who voted for it earns the host's *points for finding the Impostor* (0 by default, so by default nobody scores). When it escapes, only the Impostor scores.
 - A **cancelled** turn (the Impostor left or was removed) scores 0.
 - After the last turn the highest score wins; players tied on top share the win; a top score of 0 means no winner.
 

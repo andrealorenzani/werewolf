@@ -91,6 +91,8 @@ HTML;
         $pmin = ImpostorConfig::POINTS_MIN;
         $pmax = ImpostorConfig::POINTS_MAX;
         $pdef = ImpostorConfig::POINTS_DEF;
+        $ppmax = ImpostorConfig::PLAYER_POINTS_MAX;
+        $hmax = Impostor::HOST_PAIRS_MAX;
         $tmin = ImpostorConfig::TURNS_MIN;
         $tmax = ImpostorConfig::TURNS_MAX;
         $smin = ImpostorConfig::SEATS_MIN;
@@ -101,13 +103,13 @@ HTML;
         $um = Impostor::UNVEIL_MS / 1000;
         $o = "\n    <section id=\"impostor\">\n      <h2>{$h($g['icon'])} {$h($g['title'])} rules</h2>\n"
             . "      <p>{$h($g['pitch'])}</p>\n      <ol>\n"
-            . "        <li><strong>Questions:</strong> the host picks the built-in question pool or lets the players write their own pairs of similar questions (the author of a pair always answers the question for everybody and is never the Impostor of that turn).</li>\n"
+            . "        <li><strong>Questions:</strong> the host picks the built-in question pool, lets the players write their own pairs of similar questions (the author of a pair always answers the question for everybody and is never the Impostor of that turn), or, if the host does not play, writes the pairs themselves (up to {$hmax}, at least one per turn; nobody else sees them).</li>\n"
             . "        <li><strong>Answer:</strong> everyone answers privately, up to {$amax} characters. The Impostor knows it is the Impostor and sees its own question. The phase ends when everybody has answered, or after {$am} seconds.</li>\n"
             . "        <li><strong>Read out:</strong> in a random order each player reveals their answer and presses done ({$sm} seconds at most per speaker; the host can skip a speaker or open the vote early).</li>\n"
             . "        <li><strong>Vote:</strong> everybody, the Impostor included, votes for who they think the Impostor is (not for themselves; votes can be changed until the phase ends). The vote lasts {$vmin} to {$vmax} seconds, chosen by the host, or ends as soon as everybody has voted.</li>\n"
             . "        <li><strong>Unveil:</strong> the Impostor reveals itself (automatically after {$um} seconds), then the questions, answers and votes are shown to everyone.</li>\n"
             . "      </ol>\n"
-            . "      <p><strong>Scoring:</strong> only the Impostor scores. It earns the host's points ({$pmin} to {$pmax}, {$pdef} by default) if it was not discovered. It is discovered only when it received strictly more votes than every other player: a tie at the top that includes the Impostor, or nobody voting, means it escapes. After the last turn ({$tmin} to {$tmax} turns with the built-in questions, one per written pair otherwise) the highest score wins; players tied on the top score share the win and a top score of zero means no winner.</p>\n"
+            . "      <p><strong>Scoring:</strong> the Impostor scores if it escapes. It earns the host's points ({$pmin} to {$pmax}, {$pdef} by default) if it was not discovered. It is discovered only when it received strictly more votes than every other player: a tie at the top that includes the Impostor, or nobody voting, means it escapes. When the Impostor is discovered the host can also give points (0 to {$ppmax}, always fewer than the Impostor's, 0 by default) to every player who voted for the Impostor; when it escapes only the Impostor scores. After the last turn ({$tmin} to {$tmax} turns with the built-in or the host's questions, one per written pair otherwise) the highest score wins; players tied on the top score share the win and a top score of zero means no winner.</p>\n"
             . "      <p><strong>Setup:</strong> {$smin} to {$smax} players. The host may choose not to play: then the host sees everything (the current turn live and all question pairs) and moderates. If the Impostor leaves or is removed the turn is cancelled without points; if fewer than {$smin} players remain the game ends.</p>\n";
         if ($links) {
             $o .= "      <p><a href=\"?create={$h($g['id'])}\">Start an {$h($g['title'])} game</a></p>\n";

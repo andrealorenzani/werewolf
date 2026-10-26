@@ -10,7 +10,8 @@ namespace Wm;
  *
  *   lobby -> [writing] -> (answer -> reveal -> vote -> unveil -> result) x turns -> ended
  *
- * `writing` exists only when the players write the questions. The host may not play (God mode: sees everything).
+ * `writing` exists only when the players (source `players`) or the non-playing host (source `host`) write the questions.
+ * The host may not play (God mode: sees everything).
  * Like Game, timers are lazy (tick) and all views are built by viewFor from explicit allow-lists.
  */
 final class Impostor implements Room
@@ -25,6 +26,7 @@ final class Impostor implements Room
     public const QUESTION_MAX = 140;
     public const ANSWER_MAX = 100;
     public const NO_ANSWER = '(no answer)';
+    public const HOST_PAIRS_MAX = 50;
 
     public array $settings = [];
     public int $total = 0;
@@ -34,8 +36,10 @@ final class Impostor implements Room
     public array $scores = [];
     /** Finished turns, public once played (names are copied so they survive players leaving). */
     public array $history = [];
-    /** Pool mode: pool indices of the turns, in order. NEVER in a view (except God mode). */
+    /** Pool mode: positions in ImpostorQuestions::all() of the turns, in order. Host mode: positions in hostPairs. NEVER in a view (except God mode). */
     public array $deck = [];
+    /** Host mode: list of {normal, impostor} written by the host. NEVER in a view (except God mode). */
+    public array $hostPairs = [];
     /** Players mode: authorId => {normal, impostor, confirmed}. NEVER in a view (except the author and God mode). */
     public array $pairs = [];
     /** Players mode: author ids in turn order. */
@@ -53,6 +57,9 @@ final class Impostor implements Room
             } elseif (property_exists($this, $k)) {
                 $this->$k = $v;
             }
+        }
+        if ($this->settings !== []) {
+            $this->settings += ['playerPoints' => ImpostorConfig::PLAYER_POINTS_DEF]; // saves from before this setting existed
         }
     }
 
@@ -77,7 +84,7 @@ final class Impostor implements Room
     {
         $out = [];
         foreach (['id', 'type', 'name', 'description', 'settings', 'total', 'hostId', 'phase', 'round', 'turnsTotal', 'deadline',
-            'seq', 'version', 'createdAt', 'endedAt', 'scores', 'history', 'deck', 'pairs', 'order', 'turn'] as $k) {
+            'seq', 'version', 'createdAt', 'endedAt', 'scores', 'history', 'deck', 'hostPairs', 'pairs', 'order', 'turn'] as $k) {
             $out[$k] = $this->$k;
         }
         $out['players'] = array_map(static fn(Player $p) => $p->toArray(), $this->players);
@@ -239,6 +246,8 @@ final class Impostor implements Room
             'write' => $this->write($p, $cmd),
             'confirm' => $this->confirm($p),
             'forcestart' => $this->forceStart($p),
+            'hostadd' => $this->hostAdd($p, $cmd),
+            'hostdel' => $this->hostDel($p, $cmd['index'] ?? null),
             'answer' => $this->answer($p, $cmd['text'] ?? ''),
             'done' => $this->done($p),
             'startvote' => $this->startVote($p),
@@ -299,11 +308,16 @@ final class Impostor implements Room
             throw new GameError(sprintf('At least %d players needed (%d/%d).', Config::MIN_PLAYERS, $n, $this->total));
         }
         $this->scores = array_fill_keys(array_map(static fn(Player $q) => $q->id, $this->playing()), 0);
-        if ($this->settings['source'] === 'players') {
+        if ($this->settings['source'] !== 'pool') {
             $this->enter('writing');
             return;
         }
-        $count = count(Games::get($this->type)['pairs']);
+        try {
+            $count = ImpostorQuestions::count();
+        } catch (\RuntimeException $e) {
+            error_log('Impostor question pool: ' . $e->getMessage());
+            throw new GameError('The question pool is unavailable.');
+        }
         $this->deck = array_slice($this->shuffle(range(0, $count - 1)), 0, $this->settings['turns']);
         $this->turnsTotal = count($this->deck);
         $this->startTurn(1);
@@ -313,9 +327,52 @@ final class Impostor implements Room
     private function writer(Player $p): void
     {
         $this->requirePhase('writing', 'Questions can only be written before the game starts.');
+        if ($this->settings['source'] === 'host') {
+            throw new GameError('In this game the host writes the questions.');
+        }
         if ($this->settings['source'] !== 'players') {
             throw new GameError('This game uses the built-in questions.');
         }
+    }
+
+    private function hostWriter(Player $p): void
+    {
+        $this->requireHost($p, 'write the questions');
+        $this->requirePhase('writing', 'Questions can only be written before the game starts.');
+        if ($this->settings['source'] !== 'host') {
+            throw new GameError('The players write the questions in this game.');
+        }
+    }
+
+    /** Host mode: add a pair to the host's list. */
+    private function hostAdd(Player $p, array $cmd): void
+    {
+        $this->hostWriter($p);
+        if (count($this->hostPairs) >= self::HOST_PAIRS_MAX) {
+            throw new GameError(sprintf('At most %d pairs.', self::HOST_PAIRS_MAX));
+        }
+        $normal = $this->question($cmd['normal'] ?? '', 'The question for everybody');
+        $imp = $this->question($cmd['impostor'] ?? '', "The Impostor's question");
+        if (mb_strtolower($normal) === mb_strtolower($imp)) {
+            throw new GameError('The two questions must be different.');
+        }
+        foreach ($this->hostPairs as $pr) {
+            if (mb_strtolower($pr['normal']) === mb_strtolower($normal)) {
+                throw new GameError('You already wrote that question.');
+            }
+        }
+        $this->hostPairs[] = ['normal' => $normal, 'impostor' => $imp];
+        $this->bump();
+    }
+
+    private function hostDel(Player $p, mixed $index): void
+    {
+        $this->hostWriter($p);
+        if (!is_int($index) && !(is_string($index) && ctype_digit($index)) || !isset($this->hostPairs[(int)$index])) {
+            throw new GameError('No such pair.');
+        }
+        array_splice($this->hostPairs, (int)$index, 1);
+        $this->bump();
     }
 
     private function question(mixed $v, string $label): string
@@ -357,7 +414,7 @@ final class Impostor implements Room
     /** Every playing player has confirmed: go. A non-playing (God) host's pair is optional: used if confirmed, dropped otherwise. */
     private function startIfWritten(): void
     {
-        if ($this->phase !== 'writing') {
+        if ($this->phase !== 'writing' || $this->settings['source'] !== 'players') {
             return;
         }
         foreach ($this->playing() as $q) {
@@ -371,6 +428,16 @@ final class Impostor implements Room
     private function forceStart(Player $p): void
     {
         $this->requireHost($p, 'start the game');
+        if ($this->phase === 'writing' && $this->settings['source'] === 'host') {
+            $have = count($this->hostPairs);
+            if ($have < $this->settings['turns']) {
+                throw new GameError(sprintf('Write at least %d pairs (you have %d).', $this->settings['turns'], $have));
+            }
+            $this->deck = array_slice($this->shuffle(range(0, $have - 1)), 0, $this->settings['turns']);
+            $this->turnsTotal = count($this->deck);
+            $this->startTurn(1);
+            return;
+        }
         $this->writer($p);
         $this->beginTurns();
     }
@@ -392,7 +459,15 @@ final class Impostor implements Room
     {
         $this->round = $n;
         if ($this->settings['source'] === 'pool') {
-            [$normal, $imp] = Games::get($this->type)['pairs'][$this->deck[$n - 1]];
+            try {
+                [$normal, $imp] = ImpostorQuestions::all()[$this->deck[$n - 1]];
+            } catch (\RuntimeException $e) {
+                error_log('Impostor question pool: ' . $e->getMessage());
+                throw new GameError('The question pool is unavailable.');
+            }
+            $author = null;
+        } elseif ($this->settings['source'] === 'host') {
+            ['normal' => $normal, 'impostor' => $imp] = $this->hostPairs[$this->deck[$n - 1]];
             $author = null;
         } else {
             $author = $this->order[$n - 1];
@@ -533,6 +608,17 @@ final class Impostor implements Room
         if ($points > 0 && isset($this->scores[$imp])) {
             $this->scores[$imp] += $points;
         }
+        // Discovered: whoever voted for the Impostor (and is still in the game) scores the players' points.
+        $playerPoints = $discovered ? $this->settings['playerPoints'] : 0;
+        $awards = [];
+        if ($playerPoints > 0) {
+            foreach ($t['votes'] as $voter => $target) {
+                if ($target === $imp && isset($this->scores[$voter]) && $this->player($voter) !== null) {
+                    $this->scores[$voter] += $playerPoints;
+                    $awards[] = ['id' => $voter, 'name' => $this->player($voter)->name, 'points' => $playerPoints];
+                }
+            }
+        }
         $name = fn(?string $id): ?string => $id === null ? null : ($this->player($id)?->name ?? '?');
         $ids = array_values(array_filter($t['order'] ?: array_keys($t['answers']), static fn($id) => isset($t['answers'][$id])));
         arsort($tally);
@@ -540,6 +626,7 @@ final class Impostor implements Room
             'n' => $t['n'], 'normal' => $t['normal'], 'impostor' => $t['impostor'], 'impostorId' => $imp,
             'impostorName' => $t['impostorName'], 'authorName' => $t['authorName'],
             'cancelled' => $cancelled, 'discovered' => $cancelled ? null : $discovered, 'points' => $points,
+            'playerPoints' => $playerPoints, 'awards' => $awards,
             'answers' => array_map(fn($id) => ['id' => $id, 'name' => $name($id), 'text' => $t['answers'][$id]], $ids),
             'votes' => array_map(fn($by, $to) => ['id' => $by, 'name' => $name($by), 'target' => $to, 'targetName' => $name($to)],
                 array_keys($t['votes']), array_values($t['votes'])),
@@ -592,10 +679,19 @@ final class Impostor implements Room
     {
         $out = [];
         if ($this->settings['source'] === 'pool') {
-            $pairs = Games::get($this->type)['pairs'];
+            $pairs = ImpostorQuestions::all();
             foreach ($this->deck as $i => $idx) {
                 $out[] = ['turn' => $i + 1, 'author' => null, 'normal' => $pairs[$idx][0], 'impostor' => $pairs[$idx][1], 'confirmed' => true];
             }
+            return $out;
+        }
+        if ($this->settings['source'] === 'host') {
+            foreach ($this->hostPairs as $i => $pr) {
+                $turn = array_search($i, $this->deck, true);
+                $out[] = ['index' => $i, 'turn' => $turn === false ? null : $turn + 1, 'author' => null,
+                    'normal' => $pr['normal'], 'impostor' => $pr['impostor'], 'confirmed' => true];
+            }
+            usort($out, static fn(array $a, array $b) => ($a['turn'] ?? 999) <=> ($b['turn'] ?? 999) ?: $a['index'] <=> $b['index']);
             return $out;
         }
         foreach ($this->pairs as $author => $pr) {

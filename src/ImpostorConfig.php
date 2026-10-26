@@ -18,7 +18,10 @@ final class ImpostorConfig
     public const POINTS_MIN = 1;
     public const POINTS_MAX = 10;
     public const POINTS_DEF = 3;
-    public const SOURCES = ['pool', 'players'];
+    public const PLAYER_POINTS_MIN = 0;
+    public const PLAYER_POINTS_MAX = 9;
+    public const PLAYER_POINTS_DEF = 0;
+    public const SOURCES = ['pool', 'players', 'host'];
 
     /** @return array<string,int> limits for the client's setup form */
     public static function limits(): array
@@ -27,6 +30,7 @@ final class ImpostorConfig
             'turnsMin' => self::TURNS_MIN, 'turnsMax' => self::TURNS_MAX, 'turnsDef' => self::TURNS_DEF,
             'voteMin' => self::VOTE_MIN, 'voteMax' => self::VOTE_MAX, 'voteDef' => self::VOTE_DEF,
             'pointsMin' => self::POINTS_MIN, 'pointsMax' => self::POINTS_MAX, 'pointsDef' => self::POINTS_DEF,
+            'playerPointsMin' => self::PLAYER_POINTS_MIN, 'playerPointsMax' => self::PLAYER_POINTS_MAX, 'playerPointsDef' => self::PLAYER_POINTS_DEF,
             'questionMin' => Impostor::QUESTION_MIN, 'questionMax' => Impostor::QUESTION_MAX, 'answerMax' => Impostor::ANSWER_MAX];
     }
 
@@ -58,6 +62,14 @@ final class ImpostorConfig
             throw new GameError('Invalid question source.');
         }
         $hostPlays = filter_var($in['hostPlays'] ?? true, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? true;
+        if ($source === 'host' && $hostPlays) {
+            throw new GameError('Only a host who does not play can write the questions.');
+        }
+        $points = self::int($in['points'] ?? null, self::POINTS_MIN, self::POINTS_MAX, self::POINTS_DEF, 'Points');
+        $playerPoints = self::int($in['playerPoints'] ?? null, self::PLAYER_POINTS_MIN, self::PLAYER_POINTS_MAX, self::PLAYER_POINTS_DEF, 'Points for finding the Impostor');
+        if ($playerPoints >= $points) {
+            throw new GameError('Points for finding the Impostor must be lower than the Impostor\'s points.');
+        }
         $vote = $in['voteSeconds'] ?? null;
         $vote = !is_numeric($vote) || (float)$vote <= 0 ? self::VOTE_DEF : (int)min(self::VOTE_MAX, max(self::VOTE_MIN, round((float)$vote)));
         return [
@@ -67,7 +79,7 @@ final class ImpostorConfig
                 'hostPlays' => $hostPlays, 'source' => $source,
                 'turns' => self::int($in['turns'] ?? null, self::TURNS_MIN, self::TURNS_MAX, self::TURNS_DEF, 'Number of turns'),
                 'voteSeconds' => $vote,
-                'points' => self::int($in['points'] ?? null, self::POINTS_MIN, self::POINTS_MAX, self::POINTS_DEF, 'Points'),
+                'points' => $points, 'playerPoints' => $playerPoints,
             ],
             'total' => self::int($input['seats'] ?? null, self::SEATS_MIN, self::SEATS_MAX, self::SEATS_DEF, 'Number of seats'),
         ];

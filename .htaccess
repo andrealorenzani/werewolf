@@ -12,4 +12,4 @@ RewriteCond %{REQUEST_URI} !^/public/
 RewriteRule ^(.*)$ public/$1 [L]
 
 # Defence in depth: these are not under public/ anyway.
-RedirectMatch 404 ^/(config|src|data|tests|docs|scripts|\.claude|\.git)(/.*)?$
+RedirectMatch 404 ^/(config|src|data|resources|tests|docs|scripts|\.claude|\.git)(/.*)?$

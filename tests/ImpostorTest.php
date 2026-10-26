@@ -6,6 +6,7 @@ use Wm\Games;
 use Wm\GameError;
 use Wm\Impostor;
 use Wm\ImpostorConfig;
+use Wm\ImpostorQuestions;
 use Wm\Player;
 use Wm\Rooms;
 use Wm\Store;
@@ -80,7 +81,7 @@ T::test('impostor config: defaults and ranges', function () {
     $c = ImpostorConfig::normalize($def, ['name' => '  Fun  ']);
     T::same('Fun', $c['name']);
     T::same(8, $c['total']);
-    T::same(['hostPlays' => true, 'source' => 'pool', 'turns' => 3, 'voteSeconds' => 60, 'points' => 3], $c['settings']);
+    T::same(['hostPlays' => true, 'source' => 'pool', 'turns' => 3, 'voteSeconds' => 60, 'points' => 3, 'playerPoints' => 0], $c['settings']);
     $c = ImpostorConfig::normalize($def, ['name' => 'x', 'seats' => 30, 'settings' => ['hostPlays' => false, 'source' => 'players', 'turns' => 20, 'voteSeconds' => 5, 'points' => 10]]);
     T::same(30, $c['total']);
     T::same(false, $c['settings']['hostPlays']);
@@ -95,7 +96,7 @@ T::test('impostor config: defaults and ranges', function () {
 });
 
 T::test('impostor pool: enough distinct pairs, each with two different questions', function () {
-    $pairs = Games::get('impostor')['pairs'];
+    $pairs = ImpostorQuestions::all();
     T::true(count($pairs) >= 60 && count($pairs) >= ImpostorConfig::TURNS_MAX);
     T::same(count($pairs), count(array_unique(array_map(fn($p) => $p[0], $pairs))));
     foreach ($pairs as [$a, $b]) {
@@ -109,6 +110,7 @@ T::test('impostor: Games registry exposes the engine; classic games stay classic
     $by = array_column(Games::publicList(), null, 'id');
     T::same('impostor', $by['impostor']['engine']);
     T::true(!isset($by['impostor']['roles']) && !isset($by['impostor']['teams']) && !isset($by['impostor']['pairs']));
+    T::same(9, $by['impostor']['limits']['playerPointsMax']);
     T::same(30, $by['impostor']['limits']['seatsMax']);
     T::same('classic', $by['mafia']['engine']);
 });
@@ -193,7 +195,7 @@ T::test('impostor lobby: leave, kick, profile and unknown commands', function ()
 // ---------- pool mode ----------
 T::test('impostor pool: one impostor per turn, questions assigned, no repeated pair, turn count, end', function () {
     [$g, $ps, $clock] = startedImpostor(['turns' => 4], 5);
-    $pairs = Games::get('impostor')['pairs'];
+    $pairs = ImpostorQuestions::all();
     T::same(4, $g->turnsTotal);
     T::same(4, count(array_unique($g->deck)));
     $seen = [];
@@ -920,5 +922,298 @@ T::test('impostor rules text mentions the engine constants', function () {
     T::true(str_contains($html, 'id="impostor"'));
     T::true(str_contains($html, '30 to 90 seconds'));
     T::true(str_contains($html, 'strictly more votes'));
+    T::true(str_contains($html, '0 to 9') && str_contains($html, 'voted for the Impostor') && str_contains($html, 'up to 50'));
     T::true(str_contains(Wm\Rules::html(true), '?create=impostor'));
+});
+
+// ---------- player points ----------
+T::test('impostor config: host source needs a non-playing host; playerPoints range and relation to points', function () {
+    $def = Games::get('impostor');
+    $n = fn(array $s) => ImpostorConfig::normalize($def, ['name' => 'x', 'settings' => $s]);
+    T::same('host', $n(['source' => 'host', 'hostPlays' => false])['settings']['source']);
+    T::throws(fn() => $n(['source' => 'host']), '/Only a host who does not play can write the questions/');
+    T::throws(fn() => $n(['source' => 'host', 'hostPlays' => true]), '/Only a host who does not play/');
+    T::same(0, $n([])['settings']['playerPoints']);
+    T::same(2, $n(['points' => 3, 'playerPoints' => 2])['settings']['playerPoints']);
+    T::same(9, $n(['points' => 10, 'playerPoints' => 9])['settings']['playerPoints']);
+    foreach ([['points' => 3, 'playerPoints' => 3], ['points' => 1, 'playerPoints' => 1], ['playerPoints' => 10], ['playerPoints' => -1], ['playerPoints' => 'x']] as $bad) {
+        T::throws(fn() => $n($bad), '/./');
+    }
+    $l = ImpostorConfig::limits();
+    T::same([0, 9, 0], [$l['playerPointsMin'], $l['playerPointsMax'], $l['playerPointsDef']]);
+});
+
+T::test('impostor lobby: the host source is validated when the settings are edited', function () {
+    [$g, $ps] = startedImpostor([], 4, true);
+    $payload = ['name' => 'N', 'seats' => 8, 'settings' => ['source' => 'host', 'hostPlays' => true]];
+    T::throws(fn() => impCmd($g, $ps[0], 'settings', $payload), '/Only a host who does not play/');
+    $payload['settings']['hostPlays'] = false;
+    impCmd($g, $ps[0], 'settings', $payload);
+    T::same('host', $g->settings['source']);
+    T::throws(fn() => impCmd($g, $ps[0], 'settings', ['settings' => ['points' => 2, 'playerPoints' => 2]] + $payload), '/lower/');
+});
+
+T::test('impostor persistence: a save from before playerPoints and hostPairs loads with defaults', function () {
+    [$g] = startedImpostor([], 5);
+    $a = json_decode(json_encode($g->toArray()), true);
+    unset($a['settings']['playerPoints'], $a['hostPairs']);
+    $old = Impostor::fromArray($a);
+    T::same(0, $old->settings['playerPoints']);
+    T::same([], $old->hostPairs);
+    T::same('answer', $old->phase);
+});
+
+T::test('impostor deck: stores positions in the pool so older saves keep their questions', function () {
+    [$g] = startedImpostor(['turns' => 3], 5);
+    $pool = ImpostorQuestions::all();
+    foreach ($g->deck as $i => $pos) {
+        T::true(is_int($pos) && $pos >= 0 && $pos < count($pool));
+    }
+    $copy = Impostor::fromArray(json_decode(json_encode($g->toArray()), true));
+    T::same($g->deck, $copy->deck);
+    T::same($pool[$g->deck[0]], [$copy->turn['normal'], $copy->turn['impostor']]);
+});
+
+T::test('impostor start: an unavailable question pool is a clean error', function () {
+    [$g, $ps] = startedImpostor([], 5, true);
+    ImpostorQuestions::useFile('/nonexistent/impostor.md');
+    $log = ini_set('error_log', '/dev/null');
+    try {
+        T::throws(fn() => impCmd($g, $ps[0], 'start'), '/The question pool is unavailable/');
+    } finally {
+        ImpostorQuestions::useFile(null);
+        ini_set('error_log', (string)$log);
+    }
+    T::same('lobby', $g->phase);
+    impCmd($g, $ps[0], 'start');
+    T::same('answer', $g->phase);
+});
+
+T::test('impostor scoring: voters who found the Impostor score the player points; the Impostor gets nothing', function () {
+    [$g, $ps, $clock] = startedImpostor(['points' => 4, 'playerPoints' => 2], 6);
+    [$imp, $o] = impNames($g);
+    $h = impFinishTurn($g, $clock, [$o[0] => $imp, $o[1] => $imp, $o[2] => $o[3], $imp => $o[0]]);
+    T::same(true, $h['discovered']);
+    T::same(0, $h['points']);
+    T::same(2, $h['playerPoints']);
+    $by = array_column(array_map(fn(Player $p) => ['n' => $p->name, 'id' => $p->id], $g->players), 'id', 'n');
+    T::same([$by[$o[0]], $by[$o[1]]], array_column($h['awards'], 'id'));
+    T::same([$o[0], $o[1]], array_column($h['awards'], 'name'));
+    T::same(2, $g->scores[$by[$o[0]]]);
+    T::same(2, $g->scores[$by[$o[1]]]);
+    T::same(0, $g->scores[$by[$o[2]]]);
+    T::same(0, $g->scores[$by[$imp]]);
+    T::same($h['awards'], $g->viewFor($ps[0]->id)['history'][0]['awards']); // public once played
+});
+
+T::test('impostor scoring: not discovered means only the Impostor scores, even if some voted for it', function () {
+    // tie at the top 2-2 between the Impostor and another player
+    [$g, $ps, $clock] = startedImpostor(['points' => 4, 'playerPoints' => 2], 6);
+    [$imp, $o] = impNames($g);
+    $h = impFinishTurn($g, $clock, [$o[0] => $imp, $o[1] => $imp, $o[2] => $o[3], $o[3] => $o[4], $o[4] => $o[3]]);
+    T::same(false, $h['discovered']);
+    T::same(4, $h['points']);
+    T::same([], $h['awards']);
+    T::same(0, $h['playerPoints']);
+    $scores = array_filter($g->scores);
+    T::same([$h['impostorId'] => 4], $scores);
+});
+
+T::test('impostor scoring: a 3-3 tie for most votes is not discovered', function () {
+    [$g, $ps, $clock] = startedImpostor(['points' => 3, 'playerPoints' => 1], 7);
+    [$imp, $o] = impNames($g);
+    $h = impFinishTurn($g, $clock, [$o[0] => $imp, $o[1] => $imp, $o[2] => $imp, $o[3] => $o[4], $o[4] => $o[5], $o[5] => $o[4], $imp => $o[4]]);
+    // impostor 3 votes, o[4] 3 votes
+    T::same(false, $h['discovered']);
+    T::same(3, $g->scores[$h['impostorId']]);
+    T::same([], $h['awards']);
+    T::same(3, array_sum($g->scores));
+});
+
+T::test('impostor scoring: playerPoints 0 (default) awards nothing, a cancelled turn nobody', function () {
+    [$g, $ps, $clock] = startedImpostor([], 5);
+    [$imp, $o] = impNames($g);
+    $h = impFinishTurn($g, $clock, [$o[0] => $imp, $o[1] => $imp]);
+    T::same(true, $h['discovered']);
+    T::same([], $h['awards']);
+    T::same(0, array_sum($g->scores));
+
+    [$g, $ps] = startedImpostor(['points' => 3, 'playerPoints' => 2, 'turns' => 2], 6);
+    impToVote($g);
+    $imp = impImpostor($g);
+    $voters = array_values(array_filter($g->playing(), fn(Player $p) => $p->id !== $imp->id));
+    impCmd($g, $voters[0], 'vote', ['target' => $imp->id]);
+    impCmd($g, $imp, 'leave');
+    $h = end($g->history);
+    T::same(true, $h['cancelled']);
+    T::same([], $h['awards']);
+    T::same(0, array_sum($g->scores));
+});
+
+T::test('impostor scoring: a voter who leaves before the end scores nothing; the others still do', function () {
+    [$g, $ps, $clock] = startedImpostor(['points' => 3, 'playerPoints' => 1], 6);
+    impToVote($g);
+    $imp = impImpostor($g);
+    $voters = array_values(array_filter($g->playing(), fn(Player $p) => $p->id !== $imp->id && $p->id !== $ps[0]->id));
+    foreach ([$voters[0], $voters[1], $voters[2]] as $v) {
+        impCmd($g, $v, 'vote', ['target' => $imp->id]);
+    }
+    impCmd($g, $voters[0], 'leave');
+    foreach ($g->playing() as $p) {
+        if (!array_key_exists($p->id, $g->turn['votes'])) {
+            impCmd($g, $p, 'vote', ['target' => null]);
+        }
+    }
+    if ($g->phase === 'vote') {
+        $clock->ms += 100000;
+        $g->tick();
+    }
+    impCmd($g, $imp, 'unveil');
+    $h = end($g->history);
+    T::same(true, $h['discovered']);
+    T::same(2, count($h['awards']));
+    T::false(isset($g->scores[$voters[0]->id]));
+    T::same(2, array_sum($g->scores));
+});
+
+// ---------- host writes the questions ----------
+function hostGame(int $turns = 2, int $n = 4, ?callable $rng = null): array
+{
+    return startedImpostor(['source' => 'host', 'hostPlays' => false, 'turns' => $turns], $n, false, $rng);
+}
+
+function hostAddPairs(Impostor $g, Player $host, int $count, string $prefix = 'Q'): void
+{
+    for ($i = 1; $i <= $count; $i++) {
+        impCmd($g, $host, 'hostadd', ['normal' => "{$prefix} normal question {$i}?", 'impostor' => "{$prefix} impostor question {$i}?"]);
+    }
+}
+
+T::test('impostor host mode: start goes to writing; only the host adds and deletes pairs; players cannot write', function () {
+    [$g, $ps] = hostGame();
+    T::same('writing', $g->phase);
+    T::throws(fn() => impCmd($g, $ps[1], 'hostadd', ['normal' => 'Normal question one?', 'impostor' => 'Impostor question one?']), '/Only the host/');
+    T::throws(fn() => impCmd($g, $ps[1], 'write', ['normal' => 'Normal question one?', 'impostor' => 'Impostor question one?']), '/host writes/');
+    T::throws(fn() => impCmd($g, $ps[1], 'confirm'), '/host writes/');
+    T::throws(fn() => impCmd($g, $ps[1], 'forcestart'), '/Only the host/');
+    T::throws(fn() => impCmd($g, $ps[1], 'hostdel', ['index' => 0]), '/Only the host/');
+    T::throws(fn() => impCmd($g, $ps[0], 'write', ['normal' => 'Normal question one?', 'impostor' => 'Impostor question one?']), '/host writes/');
+    hostAddPairs($g, $ps[0], 3);
+    T::same(3, count($g->hostPairs));
+    impCmd($g, $ps[0], 'hostdel', ['index' => 1]);
+    T::same(['Q normal question 1?', 'Q normal question 3?'], array_column($g->hostPairs, 'normal'));
+    T::throws(fn() => impCmd($g, $ps[0], 'hostdel', ['index' => 5]), '/No such pair/');
+    T::throws(fn() => impCmd($g, $ps[0], 'hostdel', ['index' => -1]), '/No such pair/');
+    T::throws(fn() => impCmd($g, $ps[0], 'hostdel', ['index' => 'x']), '/No such pair/');
+    T::throws(fn() => impCmd($g, $ps[0], 'hostdel'), '/No such pair/');
+});
+
+T::test('impostor host mode: pair validation, duplicates and the limit of pairs', function () {
+    [$g, $ps] = hostGame();
+    $h = $ps[0];
+    T::throws(fn() => impCmd($g, $h, 'hostadd', ['normal' => 'abc', 'impostor' => 'Impostor question?']), '/5 to 140/');
+    T::throws(fn() => impCmd($g, $h, 'hostadd', ['normal' => 'Normal question?', 'impostor' => str_repeat('x', 141)]), '/5 to 140/');
+    T::throws(fn() => impCmd($g, $h, 'hostadd', ['normal' => 'Same question?', 'impostor' => 'same QUESTION?']), '/different/');
+    T::throws(fn() => impCmd($g, $h, 'hostadd', []), '/5 to 140/');
+    impCmd($g, $h, 'hostadd', ['normal' => 'Normal question?', 'impostor' => 'Twin question?']);
+    T::throws(fn() => impCmd($g, $h, 'hostadd', ['normal' => 'NORMAL question?', 'impostor' => 'Another twin?']), '/already wrote/');
+    hostAddPairs($g, $h, Impostor::HOST_PAIRS_MAX - 1);
+    T::same(Impostor::HOST_PAIRS_MAX, count($g->hostPairs));
+    T::throws(fn() => impCmd($g, $h, 'hostadd', ['normal' => 'One too many?', 'impostor' => 'Way too many?']), '/At most/');
+});
+
+T::test('impostor host mode: forcestart needs at least `turns` pairs; turns = exactly settings.turns; no author', function () {
+    [$g, $ps] = hostGame(3);
+    hostAddPairs($g, $ps[0], 2);
+    T::throws(fn() => impCmd($g, $ps[0], 'forcestart'), '/Write at least 3 pairs \(you have 2\)/');
+    T::same('writing', $g->phase);
+    hostAddPairs($g, $ps[0], 3, 'R'); // 5 pairs, 3 turns
+    impCmd($g, $ps[0], 'forcestart');
+    T::same('answer', $g->phase);
+    T::same(3, $g->turnsTotal);
+    T::same(3, count(array_unique($g->deck)));
+    T::same(null, $g->turn['author']);
+    T::same(null, $g->turn['authorName']);
+    $seen = [];
+    for ($n = 1; $n <= 3; $n++) {
+        $seen[] = $g->turn['normal'];
+        T::true(in_array([$g->turn['normal'], $g->turn['impostor']], array_map(fn($p) => [$p['normal'], $p['impostor']], $g->hostPairs), true));
+        T::true($g->turn['impostorId'] !== $ps[0]->id);
+        impAnswerAll($g);
+        while ($g->phase === 'reveal') {
+            impCmd($g, $ps[0], 'skip');
+        }
+        impCmd($g, $ps[0], 'skip');
+        impCmd($g, $ps[0], 'skip');
+        impCmd($g, $ps[0], 'next');
+    }
+    T::same('ended', $g->phase);
+    T::same(3, count(array_unique($seen)));
+    T::throws(fn() => impCmd($g, $ps[0], 'hostadd', ['normal' => 'Late question?', 'impostor' => 'Late twin?']), '/before the game starts/');
+});
+
+T::test('impostor host mode: exactly as many pairs as turns works; adding is closed once started; the pool is not used', function () {
+    [$g, $ps] = hostGame(2);
+    hostAddPairs($g, $ps[0], 2);
+    impCmd($g, $ps[0], 'forcestart');
+    T::same('answer', $g->phase);
+    T::same(2, $g->turnsTotal);
+    T::throws(fn() => impCmd($g, $ps[0], 'forcestart'), '/./');
+    T::true(str_starts_with($g->turn['normal'], 'Q normal'));
+});
+
+T::test('impostor host mode: other sources reject host commands', function () {
+    [$g, $ps] = startedImpostor(['source' => 'players', 'hostPlays' => false], 4);
+    T::throws(fn() => impCmd($g, $ps[0], 'hostadd', ['normal' => 'Normal question?', 'impostor' => 'Twin question?']), '/players write/');
+    [$g, $ps] = startedImpostor([], 4, true);
+    T::throws(fn() => impCmd($g, $ps[0], 'hostadd', ['normal' => 'Normal question?', 'impostor' => 'Twin question?']), '/before the game starts/');
+    impCmd($g, $ps[0], 'start');
+    T::throws(fn() => impCmd($g, $ps[0], 'hostadd', ['normal' => 'Normal question?', 'impostor' => 'Twin question?']), '/before the game starts/');
+});
+
+T::test('impostor host mode: a leaver does not start the game and the pairs stay; too few players end it', function () {
+    [$g, $ps] = hostGame(2, 5);
+    hostAddPairs($g, $ps[0], 3);
+    impCmd($g, $ps[1], 'leave');
+    T::same('writing', $g->phase);
+    T::same(3, count($g->hostPairs));
+    impCmd($g, $ps[2], 'leave');
+    T::same('ended', $g->phase);
+});
+
+T::test('impostor host mode: the pairs are visible to the God host only, never to players, never in a player view', function () {
+    [$g, $ps] = hostGame(2);
+    hostAddPairs($g, $ps[0], 3, 'Hidden');
+    $god = $g->viewFor($ps[0]->id);
+    T::same(3, count($god['god']['pairs']));
+    T::same([0, 1, 2], array_column($god['god']['pairs'], 'index'));
+    T::true(array_filter($god['god']['pairs'], fn($p) => $p['turn'] !== null) === []);
+    foreach ([1, 2, 3, 4] as $i) {
+        $json = json_encode($g->viewFor($ps[$i]->id));
+        T::false(str_contains($json, 'Hidden'));
+        T::false(str_contains($json, 'hostPairs'));
+        T::true(!isset($g->viewFor($ps[$i]->id)['god']));
+    }
+    impCmd($g, $ps[0], 'forcestart');
+    $pairs = $g->viewFor($ps[0]->id)['god']['pairs'];
+    T::same(3, count($pairs));
+    T::same([1, 2, null], array_column($pairs, 'turn'));
+    foreach ([1, 2, 3, 4] as $i) {
+        T::false(str_contains(json_encode($g->viewFor($ps[$i]->id)), 'hostPairs'));
+    }
+    $imp = impImpostor($g);
+    $normalPlayer = current(array_filter($g->playing(), fn(Player $p) => $p->id !== $imp->id));
+    T::true(str_contains($g->viewFor($normalPlayer->id)['me']['question'], 'normal question'));
+    T::true(str_contains($g->viewFor($imp->id)['me']['question'], 'impostor question'));
+});
+
+T::test('impostor host mode: persistence roundtrip keeps the pairs and the turns', function () {
+    [$g, $ps, $clock] = hostGame(2);
+    hostAddPairs($g, $ps[0], 3);
+    $copy = Impostor::fromArray(json_decode(json_encode($g->toArray()), true), ['clock' => $clock]);
+    T::same($g->toArray(), $copy->toArray());
+    impCmd($copy, $ps[0], 'forcestart');
+    $again = Impostor::fromArray(json_decode(json_encode($copy->toArray()), true), ['clock' => $clock]);
+    T::same($copy->toArray(), $again->toArray());
+    T::same('answer', $again->phase);
 });

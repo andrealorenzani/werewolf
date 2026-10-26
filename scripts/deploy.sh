@@ -20,7 +20,7 @@ fi
 php tests/run.php >/dev/null || { echo "error: tests failing; not deploying" >&2; exit 1; }
 
 # Runtime files only: no docs, tests, scripts or agent configuration on the server.
-RUNTIME='^(\.htaccess|public/|src/|config/(config\.php|\.htaccess)$|data/(\.htaccess|\.gitkeep)$)'
+RUNTIME='^(\.htaccess|public/|src/|config/(config\.php|\.htaccess)$|data/(\.htaccess|\.gitkeep)$|resources/)'
 
 HEAD_SHA=$(git rev-parse HEAD)
 LAST=""; [ -f .deploy-state ] && LAST=$(cat .deploy-state)

@@ -4,14 +4,15 @@ import { esc } from '../util.js';
 export function impostorSettingsLines(st, total) {
   return [
     `Seats: ${total}`, `Host plays: ${st.hostPlays ? 'yes' : 'no (host sees everything)'}`,
-    `Questions: ${st.source === 'players' ? 'written by the players' : `built-in pool, ${st.turns} turn${st.turns === 1 ? '' : 's'}`}`,
+    `Questions: ${st.source === 'players' ? 'written by the players' : `${st.source === 'host' ? 'written by the host' : 'built-in pool'}, ${st.turns} turn${st.turns === 1 ? '' : 's'}`}`,
     `Vote time: ${st.voteSeconds} s`, `Points for an undiscovered Impostor: ${st.points}`,
+    `Points for each player who finds the Impostor: ${st.playerPoints ?? 0}`,
   ];
 }
 
 /**
  * Impostor setup form, shared by "create" and the host's lobby "Edit settings".
- * initial: {name, description, seats, settings{hostPlays, source, turns, voteSeconds, points}}. Same contract as
+ * initial: {name, description, seats, settings{hostPlays, source, turns, voteSeconds, points, playerPoints}}. Same contract as
  * buildSetupForm: {el, values(), validate()}; limits come from the server (def.limits).
  */
 export function buildImpostorSetup(def, initial, onChange = () => {}) {
@@ -34,11 +35,13 @@ export function buildImpostorSetup(def, initial, onChange = () => {}) {
       <p class="muted small">If you do not play, you moderate and see everything: both questions, the Impostor, all answers and votes, and every question pair.</p>
       <div><label for="imp-source">Questions</label>
         <select id="imp-source" data-f="source"><option value="pool" ${st.source === 'players' ? '' : 'selected'}>Built-in pool of questions</option>
-          <option value="players" ${st.source === 'players' ? 'selected' : ''}>Written by the players</option></select></div>
+          <option value="players" ${st.source === 'players' ? 'selected' : ''}>Written by the players</option>
+          <option value="host" ${st.source === 'host' && st.hostPlays === false ? 'selected' : ''} ${st.hostPlays === false ? '' : 'disabled'}>Written by the host (host does not play)</option></select></div>
       <div class="form-grid">
         <div data-turns-box>${num('turns', 'Turns', L.turnsMin, L.turnsMax, st.turns ?? L.turnsDef)}</div>
         ${num('voteSeconds', 'Vote time (seconds)', L.voteMin, L.voteMax, st.voteSeconds ?? L.voteDef)}
         ${num('points', 'Points for an undiscovered Impostor', L.pointsMin, L.pointsMax, st.points ?? L.pointsDef)}
+        ${num('playerPoints', 'Points for each player who finds the Impostor', L.playerPointsMin, L.playerPointsMax, st.playerPoints ?? L.playerPointsDef)}
         ${num('seats', 'Seats (players)', L.seatsMin, L.seatsMax, initial.seats ?? L.seatsDef)}
       </div>
       <p class="muted small" data-source-note></p>
@@ -47,13 +50,19 @@ export function buildImpostorSetup(def, initial, onChange = () => {}) {
   const q = (s) => el.querySelector(s);
   const f = (k) => q(`[data-f="${k}"]`);
   const range = [['turns', L.turnsMin, L.turnsMax, 'Turns'], ['voteSeconds', L.voteMin, L.voteMax, 'Vote time'],
-    ['points', L.pointsMin, L.pointsMax, 'Points'], ['seats', L.seatsMin, L.seatsMax, 'Seats']];
+    ['points', L.pointsMin, L.pointsMax, 'Points'], ['playerPoints', L.playerPointsMin, L.playerPointsMax, 'Points for finding the Impostor'], ['seats', L.seatsMin, L.seatsMax, 'Seats']];
 
   function validate() {
-    const players = f('source').value === 'players';
+    const hostOption = f('source').querySelector('option[value="host"]');
+    hostOption.disabled = q('[data-host-plays]').checked;
+    if (hostOption.disabled && f('source').value === 'host') f('source').value = 'pool';
+    const source = f('source').value;
+    const players = source === 'players';
     q('[data-turns-box]').hidden = players;
     q('[data-source-note]').textContent = players
-      ? 'Every player writes one pair of similar questions; each pair is one turn.' : 'Questions are drawn from the built-in pool without repeating.';
+      ? 'Every player writes one pair of similar questions; each pair is one turn.'
+      : source === 'host' ? 'You write the pairs before the game starts (at least one per turn); only you can see them.'
+        : 'Questions are drawn from the built-in pool without repeating.';
     for (const [key, lo, hi, label] of range) {
       if (key === 'turns' && players) continue;
       const n = Number(f(key).value);
@@ -62,6 +71,11 @@ export function buildImpostorSetup(def, initial, onChange = () => {}) {
         q('[data-check]').textContent = text;
         return text;
       }
+    }
+    if (Number(f('playerPoints').value) >= Number(f('points').value)) {
+      const text = 'Points for finding the Impostor must be lower than the Impostor\'s points.';
+      q('[data-check]').textContent = text;
+      return text;
     }
     q('[data-check]').textContent = `${f('seats').value} seats, at least ${L.seatsMin} players are needed to start.`;
     return '';
@@ -72,7 +86,7 @@ export function buildImpostorSetup(def, initial, onChange = () => {}) {
   const values = () => ({
     name: q('[data-name]').value, description: q('[data-desc]').value, seats: f('seats').value,
     settings: { hostPlays: q('[data-host-plays]').checked, source: f('source').value, turns: f('turns').value,
-      voteSeconds: f('voteSeconds').value, points: f('points').value },
+      voteSeconds: f('voteSeconds').value, points: f('points').value, playerPoints: f('playerPoints').value },
   });
   validate();
   return { el, values, validate };

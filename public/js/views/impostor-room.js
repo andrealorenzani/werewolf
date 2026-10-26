@@ -153,7 +153,9 @@ export async function openImpostorRoom(app, gameId, navigate, def) {
     const ph = state.phase;
     let html = '';
     if (ph === 'lobby') html = lobbyHtml();
-    else if (ph === 'writing') {
+    else if (ph === 'writing' && state.settings.source === 'host') {
+      html = hostWritingHtml();
+    } else if (ph === 'writing') {
       const authors = playing().filter((p) => p.confirmed).length;
       html = `<div class="panel stack"><h2>Write the questions</h2>
         <p class="muted">Each author writes a pair of similar questions: one for everybody and a close one for the Impostor. ${authors}/${playing().length} confirmed.</p>
@@ -188,6 +190,23 @@ export async function openImpostorRoom(app, gameId, navigate, def) {
     setHtml(el, html);
   }
 
+  /** Host mode, writing phase: the host sees the pairs written so far; the players just wait. */
+  function hostWritingHtml() {
+    const m = me();
+    if (!m.isHost) {
+      return '<div class="panel stack"><h2>Waiting for the host</h2><p class="muted">The host is preparing the questions. The game starts as soon as they are ready.</p></div>';
+    }
+    const need = state.settings.turns;
+    const pairs = state.god?.pairs ?? [];
+    const ready = pairs.length >= need;
+    return `<div class="panel stack"><h2>Write the questions</h2>
+      <p class="muted">Write pairs of similar questions: one for everybody and a close one for the Impostor. Only you can see them. Each game turn uses one pair, picked at random.</p>
+      <p><span class="badge ${ready ? 'day' : ''}">${pairs.length} of ${need} needed</span></p>
+      ${pairs.length ? `<ol class="small imp-pairs">${pairs.map((p) => `<li>${esc(p.normal)}<br><span class="muted">${esc(p.impostor)}</span>
+        <span class="link" role="button" tabindex="0" data-hostdel="${p.index}" title="Delete this pair">✕</span></li>`).join('')}</ol>` : ''}
+      <button type="button" class="primary" data-forcestart ${ready ? '' : 'disabled'}>${ready ? 'Start the game' : `Write at least ${need} pairs to start`}</button></div>`;
+  }
+
   function voteHtml() {
     const m = me();
     const mine = m.voted ? m.vote : undefined;
@@ -206,7 +225,7 @@ export async function openImpostorRoom(app, gameId, navigate, def) {
     if (!h) return '';
     const m = me();
     const verdict = h.cancelled ? `<p class="error" style="min-height:0">The Impostor left: this turn is cancelled and nobody scores.</p>`
-      : h.discovered ? `<p><b class="team-good">Discovered!</b> The group found the Impostor. No points.</p>`
+      : h.discovered ? `<p><b class="team-good">Discovered!</b> ${h.awards?.length ? `${h.awards.length} player${h.awards.length === 1 ? '' : 's'} found the Impostor and score${h.awards.length === 1 ? 's' : ''} ${h.playerPoints} each (${h.awards.map((a) => esc(a.name)).join(', ')}).` : 'The group found the Impostor.'} The Impostor gets no points.</p>`
         : `<p><b class="team-evil">The Impostor escaped!</b> ${esc(h.impostorName)} scores ${h.points} point${h.points === 1 ? '' : 's'}.</p>`;
     const tally = h.tally.map((x) => `${esc(x.name)}: ${x.count}`).join(' · ') || 'nobody received a vote';
     const votes = h.votes.map((v) => `${esc(v.name)} → ${v.targetName ? esc(v.targetName) : 'abstained'}`).join(' · ');
@@ -265,6 +284,16 @@ export async function openImpostorRoom(app, gameId, navigate, def) {
   function renderForm() {
     const m = me();
     const ph = state.phase;
+    if (ph === 'writing' && state.settings.source === 'host') {
+      if (!m.isHost) return setForm('none', '');
+      return setForm('hostwrite', `<form class="panel stack" data-host-form>
+        <h3>Add a pair</h3>
+        <div><label for="hq-n">Question for everybody (${L.questionMin}-${L.questionMax} characters)</label>
+          <textarea id="hq-n" name="normal" rows="2" maxlength="${L.questionMax}" required></textarea><span class="small muted" data-count="normal"></span></div>
+        <div><label for="hq-i">Similar question for the Impostor (${L.questionMin}-${L.questionMax} characters)</label>
+          <textarea id="hq-i" name="impostor" rows="2" maxlength="${L.questionMax}" required></textarea><span class="small muted" data-count="impostor"></span></div>
+        <button type="button" class="primary" data-host-add>Add this pair</button></form>`);
+    }
     if (ph === 'writing' && (!m.god || m.isHost)) {
       const pr = m.pair;
       if (pr?.confirmed) {
@@ -334,7 +363,7 @@ export async function openImpostorRoom(app, gameId, navigate, def) {
       <p class="small"><span class="muted">For everybody:</span> ${esc(tr.normal)}<br><span class="muted">For the Impostor:</span> ${esc(tr.impostor)}</p>
       <p class="small"><b>Answers:</b> ${Object.entries(tr.answers).map(([id, t]) => `${esc(nameOf(id))}: ${esc(t)}`).join(' · ') || 'none yet'}</p>
       <p class="small"><b>Votes:</b> ${Object.entries(tr.votes).map(([id, t]) => `${esc(nameOf(id))} → ${t ? esc(nameOf(t)) : 'abstain'}`).join(' · ') || 'none yet'}</p>` : '';
-    const pairs = g.pairs.length ? `<h4>All question pairs</h4><ol class="small imp-pairs">${g.pairs.map((p) => `<li>${p.turn ? `<b>Turn ${p.turn}</b> ` : '<b>Not scheduled</b> '}${p.author ? `by ${esc(p.author)} ` : ''}${p.confirmed ? '' : '(draft) '}<br>${esc(p.normal)}<br><span class="muted">${esc(p.impostor)}</span></li>`).join('')}</ol>` : '';
+    const pairs = g.pairs.length && !(state.phase === 'writing' && state.settings.source === 'host') ? `<h4>All question pairs</h4><ol class="small imp-pairs">${g.pairs.map((p) => `<li>${p.turn ? `<b>Turn ${p.turn}</b> ` : '<b>Not scheduled</b> '}${p.author ? `by ${esc(p.author)} ` : ''}${p.confirmed ? '' : '(draft) '}<br>${esc(p.normal)}<br><span class="muted">${esc(p.impostor)}</span></li>`).join('')}</ol>` : '';
     setHtml(el, `<div class="panel stack"><h3>🔭 God mode</h3><p class="small muted">Only you, the moderator, see this.</p>${live}${pairs}</div>`);
   }
 
@@ -399,7 +428,7 @@ export async function openImpostorRoom(app, gameId, navigate, def) {
 
   // ---------- events ----------
   app.addEventListener('click', (e) => {
-    const t = e.target.closest('[data-start],[data-copy],[data-kick],[data-leave],[data-home],[data-edit-settings],[data-edit-profile],[data-skip],[data-done],[data-startvote],[data-target],[data-vote],[data-abstain],[data-unveil],[data-next],[data-forcestart],[data-save-draft],[data-confirm-pair]');
+    const t = e.target.closest('[data-start],[data-copy],[data-kick],[data-leave],[data-home],[data-edit-settings],[data-edit-profile],[data-skip],[data-done],[data-startvote],[data-target],[data-vote],[data-abstain],[data-unveil],[data-next],[data-forcestart],[data-hostdel],[data-host-add],[data-save-draft],[data-confirm-pair]');
     if (!t) return;
     const d = t.dataset;
     if ('start' in d) send({ t: 'start' });
@@ -420,6 +449,13 @@ export async function openImpostorRoom(app, gameId, navigate, def) {
     else if ('unveil' in d) send({ t: 'unveil' });
     else if ('next' in d) send({ t: 'next' });
     else if ('forcestart' in d) send({ t: 'forcestart' });
+    else if ('hostdel' in d) send({ t: 'hostdel', index: Number(d.hostdel) });
+    else if ('hostAdd' in d) {
+      const f = formBox.querySelector('[data-host-form]');
+      send({ t: 'hostadd', normal: f.normal.value, impostor: f.impostor.value }).then((ok) => {
+        if (ok) { f.normal.value = ''; f.impostor.value = ''; updateCounts(f); f.normal.focus(); }
+      });
+    }
     else if ('saveDraft' in d || 'confirmPair' in d) {
       e.preventDefault();
       const f = formBox.querySelector('[data-write-form]');
@@ -439,7 +475,7 @@ export async function openImpostorRoom(app, gameId, navigate, def) {
   });
   app.addEventListener('submit', (e) => {
     if (e.target.matches('[data-answer-form]')) { e.preventDefault(); send({ t: 'answer', text: e.target.text.value }); }
-    else if (e.target.matches('[data-write-form]')) e.preventDefault();
+    else if (e.target.matches('[data-write-form],[data-host-form]')) e.preventDefault();
   });
   new MutationObserver(() => { const f = formBox.querySelector('form'); if (f) updateCounts(f); }).observe(formBox, { childList: true });
 

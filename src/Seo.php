@@ -22,7 +22,7 @@ final class Seo
         '/how-to-play' => [
             'title' => 'How to Play Werewolf, Mafia & Impostor: Rules',
             'description' => 'Learn the rules of Werewolf, Mafia and Impostor: day and night phases, voting, scoring and every role explained, from Seer to Godfather.',
-            'updated' => '2026-10-23',
+            'updated' => '2026-10-26',
         ],
     ];
 

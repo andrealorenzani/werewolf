@@ -2,6 +2,16 @@
 
 Newest first. Maintained by the `documenter` agent for every player- or developer-visible change.
 
+## 2026-10-26
+### Added
+- Impostor: new question source `host` (only if the host does not play): the host writes up to 50 pairs in the writing phase (commands `hostadd`, `hostdel`, `forcestart`; at least `turns` pairs needed), visible only in God view.
+- Impostor: new setting `playerPoints` (0..9, default 0, strictly below `points`): when the Impostor is discovered each present voter of it earns these points. History entries gain `playerPoints` and `awards`; old saves default to 0.
+- `src/ImpostorQuestions.php` (`all`, `count`, `file`, `useFile`): strict parser of the question pool; `tests/ImpostorQuestionsTest.php`; project skill `.claude/skills/impostor-questions`.
+### Changed
+- The built-in Impostor pool moved from `src/games/impostor.php` to the append-only `resources/impostor-questions.md` (90 pairs, up from 69); decks store positions in it. `startTurn`/`beginTurns` turn a pool failure into a `GameError`.
+- `resources/` is denied by root `.htaccess` (`RedirectMatch`) and `resources/.htaccess`, and uploaded by `scripts/deploy.sh`.
+- Rules popup and `/how-to-play` describe the host source and the new scoring; `updated` bumped to 2026-10-26.
+
 ## 2026-10-23
 ### Added
 - Third game, **Impostor**: everyone privately answers the same question except one player (the Impostor), who gets a similar one. Phases lobby, optional writing (players write question pairs), answer, reveal, vote, unveil, result, ended; the Impostor scores (host-set 1-10 points) when not strictly the most voted. Built-in pool of 69 pairs (`src/games/impostor.php`) or pairs written by the players; the host may play or not (God mode: sees the live turn and every pair). 4-30 players, 1-20 turns, vote 30-90 s; answer 180 s, speaker 120 s and unveil 60 s are fixed. No chat. Leaving/kicking: the Impostor leaving cancels the turn, below 4 players ends the game, a leaver's answers and votes are purged. Known limitation: a gone host stalls the lobby and writing phases.
