@@ -2,6 +2,12 @@
 
 Newest first. Maintained by the `documenter` agent for every player- or developer-visible change.
 
+## 2026-10-26 (license)
+### Added
+- `LICENSE` (Apache-2.0) and `NOTICE` (copyright 2026 Andrea Lorenzani); README gains a License section. One license covers code, question pool and docs. Not runtime files, not deployed.
+### Changed
+- `composer.json` license: `proprietary` -> `Apache-2.0`.
+
 ## 2026-10-26 (pool extension)
 ### Added
 - Built-in Impostor pool extended by appending 210 pairs (95-304) to `resources/impostor-questions.md`: now 304 pairs. Pairs 1-94 are unchanged (first 21 still pinned by `tests/ImpostorQuestionsTest.php`), so saved games are unaffected. The new pairs cover many more themes (work, food, travel, school, tech, animals, hypotheticals, dating, money, music/film, home, health, friends/players, crime, philosophy) beyond the sex/toilet humour.

@@ -52,6 +52,7 @@ resources/ server-only data: Impostor question pool (append-only markdown, not s
 data/     runtime game files (not served)
 tests/    dependency-free test runner
 docs/     rules.md, architecture.md, code.md
+LICENSE, NOTICE  Apache-2.0 license and copyright notice (not deployed)
 .claude/  agentic feature workflow
 ```
 Navigation guide: [`docs/code.md`](docs/code.md). Design: [`docs/architecture.md`](docs/architecture.md).
@@ -64,3 +65,6 @@ Runs `architect` (plan, reads `docs/`) → `implementer` (code + tests) → `rev
 
 ## Limitations
 No accounts, spectators or translations; state is stored in JSON files; updates arrive by polling (about 1 s).
+
+## License
+Licensed under the [Apache License 2.0](LICENSE) (copyright notice in [`NOTICE`](NOTICE)). The one license covers the code, the Impostor question pool and the docs.
