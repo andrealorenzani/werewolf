@@ -2,6 +2,11 @@
 
 Newest first. Maintained by the `documenter` agent for every player- or developer-visible change.
 
+## 2026-10-26 (pool extension)
+### Added
+- Built-in Impostor pool extended by appending 210 pairs (95-304) to `resources/impostor-questions.md`: now 304 pairs. Pairs 1-94 are unchanged (first 21 still pinned by `tests/ImpostorQuestionsTest.php`), so saved games are unaffected. The new pairs cover many more themes (work, food, travel, school, tech, animals, hypotheticals, dating, money, music/film, home, health, friends/players, crime, philosophy) beyond the sex/toilet humour.
+- Skill `.claude/skills/impostor-questions/research.md`: new "Topic spread" section.
+
 ## 2026-10-26 (pool regeneration)
 ### Changed
 - Built-in Impostor pool fully regenerated: 94 pairs in `resources/impostor-questions.md`; pairs 1-21 are the maintainer's reference samples (adult, crude-but-light, confessional humour), the other 73 follow their style. The old 90 pairs were replaced (deliberate exception to append-only: games in progress may show different questions). `tests/ImpostorQuestionsTest.php` pins the first 21 pairs.

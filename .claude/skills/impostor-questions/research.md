@@ -44,3 +44,11 @@ topics, but as a *question* with a quick answer so that the Impostor can fake it
 ## Content limits we keep
 Crude and adult is fine (the 21 samples are); no slurs, no hatred towards groups, no minors in a sexual or violent
 context, no real private people, no politics or religion, no graphic sexual detail.
+
+## Topic spread (second batch, pairs 95-304)
+The first 73 generated pairs leaned on sex, toilet and embarrassment. The 210 that followed deliberately cover: work,
+food, travel, school and childhood, tech and the internet, animals and nature, hypotheticals and superpowers, dating
+and weddings, money and shopping, music and film, home and daily habits, health and the body, friends and "the
+players", crime and mischief, and big/philosophical questions. When extending again, check the topic spread first and
+pick the least-covered themes; keep any single theme under ~10% of the pool. The spicy/embarrassing core stays, but
+the pool must not feel like one joke.

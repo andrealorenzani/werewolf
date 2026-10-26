@@ -84,7 +84,7 @@ No database. `data/<ID>.json` + `data/<ID>.lock` written by `Store`; layout of t
 | `bootstrap.php` | `T` assertions, `Clock`, `startedGame()`, `toNight()`, `act()` |
 | `EngineTest.php` | Rules: config, phases, night, vote, win, hunter, witch, escort, vigilante, visibility, chat, lazy timers, optional timers, composition/pool, late join, host settings, delete, DMs, story chat, paladin, cultist conversion, corrupt/neutral side, ghost trait (host-set count), rules popup/API, kill agreement, hunter vs hunter, caps, retention, profile, serialisation |
 | `ApiTest.php` | API + storage: create/join/poll/commands, delete, avatars, unchanged polls, lazy timers, id validation, sweep, Impostor create/info/poll over the API |
-| `ImpostorQuestionsTest.php` | Pool file: real file (94 pairs, first 21 pinned, format, uniqueness), strict parser errors via `useFile`, deck positions |
+| `ImpostorQuestionsTest.php` | Pool file: real file (304 pairs, first 21 pinned, format, uniqueness), strict parser errors via `useFile`, deck positions |
 | `ImpostorTest.php` | Impostor engine: setup validation, lobby/God host, writing, turn phases, scoring and ties, winners, leave/kick, timeouts, view secrecy, serialisation (`startedImpostor()` helper in `bootstrap.php`) |
 | `JsTest.php` | `node --check` on every `public/js` file (skipped without Node) |
 | `SeoTest.php` | `Seo`: title/description lengths, indexable vs noindex head, JSON-LD, sitemap and robots, Impostor in titles/how-to-play/home |
